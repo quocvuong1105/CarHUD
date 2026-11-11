@@ -36,10 +36,11 @@ void ble_scan_complete(BLEScanResults results) {
 
   for (uint8_t i = 0; i < count; ++i) {
     BLEAdvertisedDevice device = results.getDevice(i);
-    const std::string address = device.getAddress().toString();
-    const std::string name = device.haveName() ? device.getName() : std::string();
+    const String address = device.getAddress().toString();
+    const String name = device.haveName() ? device.getName() : String();
     snprintf(found[i].address, sizeof(found[i].address), "%s", address.c_str());
-    snprintf(found[i].name, sizeof(found[i].name), "%s", name.empty() ? "(Không có tên)" : name.c_str());
+    snprintf(found[i].name, sizeof(found[i].name), "%s",
+             name.length() == 0 ? "(Không có tên)" : name.c_str());
     found[i].rssi = static_cast<int16_t>(device.getRSSI());
   }
 
