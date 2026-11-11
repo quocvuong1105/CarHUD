@@ -25,6 +25,9 @@ struct BleDeviceInfo {
 };
 
 /** Starts a non-blocking BLE scan. Results become available when it completes. */
+bool ble_connect(const char* address);
+void ble_disconnect();
+bool ble_connected();
 bool ble_scan_start();
 bool ble_scan_active();
 bool ble_scan_completed();
