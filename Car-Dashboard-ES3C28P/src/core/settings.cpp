@@ -98,6 +98,7 @@ Settings defaults() {
   s.obd_source = 0;
   s.wifi_enabled = false;
   s.ble_enabled = false;
+  snprintf(s.wifi_obd_host, sizeof(s.wifi_obd_host), "%s", "192.168.0.10");
   s.wifi_obd_port = 35000;
   s.dash_view = 0;
   s.corner_slots[0] = SignalId::CoolantTemp;
