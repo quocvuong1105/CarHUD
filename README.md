@@ -1,42 +1,38 @@
-# Car-Dashboard-ES3C28P – bản port LCDWiki ES3C28P / ES3N28P
+# CarHUD – LCDWiki ES3C28P / ES3N28P
 
-Đây là nhánh port phần cứng ban đầu từ mã nguồn CarCYD gốc mà người dùng cung cấp.
-https://github.com/muki01/Car-Dashboard-ESP32-CYD
+CarHUD là firmware bảng đồng hồ xe sử dụng ESP32-S3 và màn hình LCDWiki ES3C28P/ES3N28P.
 
-## Đã thay đổi
+Mã nguồn được phát triển từ dự án nền tảng [Car Dashboard ESP32 CYD](https://github.com/muki01/Car-Dashboard-ESP32-CYD), sau đó điều chỉnh phần cứng và phát triển theo định hướng CarHUD.
 
-- Chuyển cấu hình bo từ ESP32-2432S028R CYD sang LCDWiki ES3C28P/ES3N28P.
+## Phần cứng hỗ trợ
+
+- LCDWiki ES3C28P / ES3N28P, ESP32-S3.
 - LCD ILI9341V: SPI SCK=GPIO12, MOSI=GPIO11, MISO=GPIO13, CS=GPIO10, DC=GPIO46; RESET dùng chung EN.
 - Đèn nền LCD: GPIO45, active HIGH.
 - Cảm ứng FT6336G: I2C SDA=GPIO16, SCL=GPIO15, địa chỉ 0x38; RESET=GPIO18, INT=GPIO17.
-- Viết lại đọc cảm ứng FT6336G, bỏ driver XPT2046.
-- Giữ nguyên core, LVGL UI, Demo mode, màn hình Dashboard/Live Data/Diagnostics/Trip/Settings.
-- Vô hiệu hóa an toàn các phần cứng đặc thù CYD không có cùng giao tiếp trên LCDWiki: LDR, RGB LED ba chân PWM và buzzer PWM.
+- LVGL 9.x và LovyanGFX 1.2.x.
 
-## Chuẩn bị biên dịch
+## Biên dịch firmware
 
-Mã nguồn gốc yêu cầu ESP32 Arduino core 3.x, LVGL 9.6+ và LovyanGFX 1.2.x. Dùng board ESP32S3 Dev Module, cấu hình Flash 16 MB và PSRAM OPI (N16R8). Không dùng cấu hình CYD 4 MB / PSRAM Disabled.
+Mã nguồn yêu cầu ESP32 Arduino core 3.x, LVGL 9.6.0 và LovyanGFX 1.2.x. Dùng board ESP32S3 Dev Module, Flash 16 MB và PSRAM OPI. Sketch Arduino nằm trong thư mục `Car-Dashboard-ES3C28P/`.
 
-Mở `CarCYD-ES3C28P/CarCYD-ES3C28P.ino` bằng Arduino IDE sau khi cài đúng thư viện như README gốc.
+GitHub Actions tự động biên dịch firmware khi push/PR theo cấu hình workflow. Bản phát hành chuẩn dùng tên `CarHUD-ES3C28P-merged.bin`.
 
-## Những phần chưa hoàn thành
+## Web Flasher
 
-1. Chưa kiểm tra biên dịch trên máy có Arduino IDE và thư viện phụ thuộc.
-2. Chưa thử trực tiếp trên bo thật: cần xác nhận chiều cảm ứng, đảo màu và thứ tự RGB/BGR.
-3. Chưa thêm tiếng Việt vào bảng chuỗi giao diện. Hiện UI vẫn có English/Türkçe từ mã nguồn gốc.
-4. Chưa có kết nối ELM327 thực tế. DataLink gốc hiện chỉ có DemoLink và NullLink.
-5. Chưa có cấu hình PlatformIO; bản gốc dùng Arduino IDE.
+- Repository: https://github.com/quocvuong1105/CarHUD
+- Firmware Flasher: https://quocvuong1105.github.io/CarHUD/
+- Hướng dẫn: [webflasher/README_VI.md](webflasher/README_VI.md)
 
-## Lưu ý Bluetooth
+Web Flasher hỗ trợ chọn file firmware `.bin` từ máy tính để nạp trực tiếp bằng Chrome/Edge qua USB. Chỉ nạp firmware đúng với bo mạch.
 
-ESP32-S3 hỗ trợ Bluetooth LE, không hỗ trợ Bluetooth Classic SPP. Nếu bộ ELM327 chỉ dùng Bluetooth Classic thì không thể kết nối trực tiếp theo kiểu SPP; cần xác định đúng model adapter và chọn giao thức phù hợp (BLE hoặc Wi-Fi).
+## Trạng thái và giới hạn
 
-## Tài liệu bo mạch
+- Cần kiểm tra firmware trên bo ES3C28P/ES3N28P thực tế sau mỗi thay đổi phần cứng.
+- Khả năng kết nối ELM327 phụ thuộc loại adapter và giao thức Bluetooth/Wi-Fi mà adapter hỗ trợ.
+- ESP32-S3 không hỗ trợ Bluetooth Classic SPP; adapter chỉ có Classic SPP không thể kết nối trực tiếp theo kiểu này.
+
+## Tài liệu phần cứng
 
 - https://www.lcdwiki.com/2.8inch_ESP32-S3_Display
 - https://www.lcdwiki.com/res/ES3C28P/2.8inch_ES3C28P_ES3N28P_arduino_Demo_Instructions.pdf
-
-## Nạp fw trực tuyến
-
-Vui lòng truy cập đây để nạp fw mới nhất:
-https://quocvuong1105.github.io/Car-Dashboard-ES3C28P
