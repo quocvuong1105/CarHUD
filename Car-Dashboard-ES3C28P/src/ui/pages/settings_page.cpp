@@ -43,10 +43,11 @@ const char* const kTempUnits[] = {"°C", "°F", nullptr};
 const char* const kPressureUnits[] = {"kPa", "bar", "psi", nullptr};
 const char* const kRpmRanges[] = {"5000", "6000", "7000", "8000", "9000", nullptr};
 const char* const kLanguages[] = {"English", "Türkçe", "Tiếng Việt", nullptr};
-const char* const kObdSources[] = {"Auto", "BLE", "Wi-Fi", "USB", nullptr};
+const char* const kObdSources[] = {"Demo", "Bluetooth BLE", "Wi-Fi", "USB", nullptr};
 const char* g_sources[3] = {};  // translated at build time
 
 SettingsPage* g_self = nullptr;
+uint8_t g_built_obd_source = 0xFF;
 
 bool switch_on(lv_event_t* e) { return lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED); }
 int32_t slider_value(lv_event_t* e) { return lv_slider_get_value(lv_event_get_target_obj(e)); }
@@ -193,8 +194,10 @@ void on_data_source(lv_event_t* e) {
   commit(chg::kChangeDataSource);
 }
 void on_obd_source(lv_event_t* e) {
-  edit().obd_source = static_cast<uint8_t>(selected_segment(e));
-  commit(chg::kChangeConnection);
+  const uint8_t source = static_cast<uint8_t>(selected_segment(e));
+  edit().obd_source = source;
+  edit().demo_mode = source == 0;
+  commit(chg::kChangeConnection | chg::kChangeDataSource);
 }
 void on_wifi_enabled(lv_event_t* e) {
   edit().wifi_enabled = switch_on(e);
@@ -287,8 +290,8 @@ void SettingsPage::refresh_summaries() {
   }
   set_text(summaries_[static_cast<int>(Section::Sound)], buf);
 
-  set_text(summaries_[static_cast<int>(Section::Connection)],
-           core::tr(s.demo_mode ? core::Str::SET_SRC_DEMO : core::Str::SET_SRC_LINK));
+  const uint8_t source = s.obd_source < 4 ? s.obd_source : 0;
+  set_text(summaries_[static_cast<int>(Section::Connection)], kObdSources[source]);
   set_text(summaries_[static_cast<int>(Section::System)], core::i18n::language_name(s.language));
   set_text(summaries_[static_cast<int>(Section::About)], "v" APP_VERSION);
 }
@@ -309,6 +312,10 @@ void SettingsPage::on_settings_changed(uint32_t changes) {
     percent_text(night_value_, s.night_brightness);
   }
   if (section_ == Section::Sound && volume_value_ != nullptr) percent_text(volume_value_, get().volume);
+  if (section_ == Section::Connection && (changes & chg::kChangeConnection) &&
+      get().obd_source != g_built_obd_source) {
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
 
   // The redline / shift steppers are bounded by the tachometer range: rebuild the
   // section (deferred, the change originates from a widget inside it).
@@ -525,29 +532,36 @@ void SettingsPage::build_sound(lv_obj_t* list) {
 }
 
 void SettingsPage::build_connection(lv_obj_t* list) {
+  const core::Settings& s = get();
+  const uint8_t source = s.obd_source < 4 ? s.obd_source : 0;
+  g_built_obd_source = source;
+
   rows::section(list, "OBD-II");
-  rows::segmented(list, ICON_DATABASE, "Nguồn dữ liệu", kObdSources, get().obd_source, on_obd_source, nullptr);
-  rows::note(list, "Auto sẽ chọn nguồn đã được hỗ trợ. USB hiện chưa triển khai.");
+  rows::segmented(list, ICON_DATABASE, "Nguồn dữ liệu", kObdSources, source, on_obd_source, nullptr);
 
-  rows::section(list, "Wi-Fi");
-  rows::toggle(list, ICON_LINK, "Bật Wi-Fi", "Quét mạng và cấu hình SSID sẽ được kích hoạt cùng dịch vụ Wi-Fi.",
-               get().wifi_enabled, on_wifi_enabled, nullptr);
-  rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", get().wifi_ssid[0] ? get().wifi_ssid : "Chưa chọn");
-  rows::info(list, ICON_LINK, "Trạng thái Wi-Fi", "Chưa khởi tạo dịch vụ");
-
-  rows::section(list, "Bluetooth");
-  rows::toggle(list, ICON_LINK, "Bật Bluetooth BLE", "ESP32-S3 hỗ trợ BLE, không hỗ trợ Bluetooth Classic.",
-               get().ble_enabled, on_ble_enabled, nullptr);
-  rows::info(list, ICON_DATABASE, "Thiết bị BLE", get().ble_address[0] ? get().ble_address : "Chưa chọn");
-  rows::info(list, ICON_LINK, "Trạng thái BLE", "Chưa khởi tạo dịch vụ");
-
-  rows::section(list, "USB");
-  rows::info(list, ICON_DATABASE, "Thiết bị USB", "Chưa hỗ trợ trong phiên bản này");
-  rows::info(list, ICON_LINK, "Trạng thái USB", "Chưa triển khai");
+  switch (source) {
+    case 0:
+      rows::note(list, "Demo đang sử dụng dữ liệu mô phỏng hiện tại.");
+      break;
+    case 1:
+      rows::section(list, "Bluetooth BLE");
+      rows::toggle(list, ICON_LINK, "Bật Bluetooth BLE", nullptr, s.ble_enabled, on_ble_enabled, nullptr);
+      rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
+      rows::note(list, "BLE scan và kết nối ELM327 chưa được tích hợp.");
+      break;
+    case 2:
+      rows::section(list, "Wi-Fi");
+      rows::toggle(list, ICON_LINK, "Bật Wi-Fi", nullptr, s.wifi_enabled, on_wifi_enabled, nullptr);
+      rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn");
+      rows::note(list, "Quét mạng và kết nối TCP tới ELM327 chưa được tích hợp.");
+      break;
+    case 3:
+      rows::section(list, "USB");
+      rows::note(list, "USB chưa được triển khai; chưa thể nhận dữ liệu OBD-II.");
+      break;
+  }
 
   rows::section(list, "Trạng thái OBD-II");
-  rows::info(list, ICON_DATABASE, "Nguồn đang sử dụng", "Chưa có nguồn hoạt động");
-  rows::info(list, ICON_CAR_INFO, "Thiết bị", "Chưa nhận diện");
   link_status_ = rows::info(list, ICON_LINK, "Trạng thái", "Chưa nhận dữ liệu OBD-II");
 }
 
