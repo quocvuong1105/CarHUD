@@ -1429,7 +1429,7 @@
 #endif /*LV_USE_IME_PINYIN*/
 
 /** Keyboard */
-#define LV_USE_KEYBOARD 0    /* CarCYD: not used */
+#define LV_USE_KEYBOARD 1    /* Required for on-screen Wi-Fi credential keyboard */
 
 /** Label */
 #define LV_USE_LABEL 1
@@ -1521,7 +1521,7 @@
  *
  *  Enable: LV_USE_LABEL
  */
-#define LV_USE_TEXTAREA 0    /* CarCYD: not used */
+#define LV_USE_TEXTAREA 1    /* Required for Wi-Fi credential and ELM endpoint editing */
 
 #if LV_USE_TEXTAREA
 /** Default password show time (ms) */
