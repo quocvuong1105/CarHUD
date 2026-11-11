@@ -43,7 +43,7 @@ const char* const kTempUnits[] = {"°C", "°F", nullptr};
 const char* const kPressureUnits[] = {"kPa", "bar", "psi", nullptr};
 const char* const kRpmRanges[] = {"5000", "6000", "7000", "8000", "9000", nullptr};
 const char* const kLanguages[] = {"English", "Türkçe", "Tiếng Việt", nullptr};
-const char* const kObdSources[] = {"Demo", "Bluetooth BLE", "Wi-Fi", "USB", nullptr};
+const char* const kObdSources[] = {"Demo", "Bluetooth", "Wi-Fi", "USB", nullptr};
 const char* g_sources[3] = {};  // translated at build time
 
 SettingsPage* g_self = nullptr;
@@ -546,7 +546,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       rows::note(list, "Demo đang sử dụng dữ liệu mô phỏng hiện tại.");
       break;
     case 1:
-      rows::section(list, "Bluetooth BLE");
+      rows::section(list, "Bluetooth");
       rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
       rows::note(list, "Chọn Bluetooth BLE ở Nguồn dữ liệu để kích hoạt nguồn này.");
       break;
