@@ -197,6 +197,8 @@ void on_obd_source(lv_event_t* e) {
   const uint8_t source = static_cast<uint8_t>(selected_segment(e));
   edit().obd_source = source;
   edit().demo_mode = source == 0;
+  edit().ble_enabled = source == 1;
+  edit().wifi_enabled = source == 2;
   commit(chg::kChangeConnection | chg::kChangeDataSource);
 }
 void on_wifi_enabled(lv_event_t* e) {
@@ -545,15 +547,13 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       break;
     case 1:
       rows::section(list, "Bluetooth BLE");
-      rows::toggle(list, ICON_LINK, "Bật Bluetooth BLE", nullptr, s.ble_enabled, on_ble_enabled, nullptr);
       rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
-      rows::note(list, "BLE scan và kết nối ELM327 chưa được tích hợp.");
+      rows::note(list, "Chọn Bluetooth BLE ở Nguồn dữ liệu để kích hoạt nguồn này.");
       break;
     case 2:
       rows::section(list, "Wi-Fi");
-      rows::toggle(list, ICON_LINK, "Bật Wi-Fi", nullptr, s.wifi_enabled, on_wifi_enabled, nullptr);
       rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn");
-      rows::note(list, "Quét mạng và kết nối TCP tới ELM327 chưa được tích hợp.");
+      rows::note(list, "Chọn Wi-Fi ở Nguồn dữ liệu để kích hoạt nguồn này.");
       break;
     case 3:
       rows::section(list, "USB");
