@@ -1,12 +1,12 @@
 ```javascript
 // ======================================================
-// CAR DASHBOARD - ESP32-S3 WEB FLASHER
+// CARHUD - ESP32-S3 WEB FLASHER
 // Board: LCDWiki ES3C28P
 // ======================================================
 
 // 1. CONFIGURATION
 const OWNER = "quocvuong1105";
-const REPO = "Car-Dashboard-ES3C28P";
+const REPO = "CarHUD";
 
 const API =
   `https://api.github.com/repos/${OWNER}/${REPO}/releases`;
@@ -14,7 +14,7 @@ const API =
 const FIRMWARE_BASE = "./firmware/";
 
 const BOARD_FIRMWARE = {
-  ES3C28P: "CarCYD-ES3C28P-merged.bin"
+  ES3C28P: "CarHUD-ES3C28P-merged.bin"
 };
 
 // 2. DOM ELEMENTS
@@ -119,7 +119,7 @@ async function updateManifest() {
   const firmwareUrl = firmwareUrlFor(release);
 
   const manifest = {
-    name: `Car Dashboard ${selectedBoard}`,
+    name: `CarHUD ${selectedBoard}`,
     version: release.tag_name,
     new_install_prompt_erase: true,
     builds: [
@@ -186,17 +186,17 @@ async function updateManifest() {
     );
 
     console.log(
-      "[Car Dashboard] Manifest:",
+      "[CarHUD] Manifest:",
       manifest
     );
 
     console.log(
-      "[Car Dashboard] Manifest URL:",
+      "[CarHUD] Manifest URL:",
       newManifestUrl
     );
 
     console.log(
-      "[Car Dashboard] Firmware URL:",
+      "[CarHUD] Firmware URL:",
       firmwareUrl
     );
 
@@ -206,7 +206,7 @@ async function updateManifest() {
     }
 
     console.error(
-      "[Car Dashboard] Manifest initialization error:",
+      "[CarHUD] Manifest initialization error:",
       error
     );
 
@@ -235,7 +235,7 @@ async function loadReleases() {
 
   try {
     console.log(
-      "[Car Dashboard] Loading releases:",
+      "[CarHUD] Loading releases:",
       API
     );
 
@@ -318,7 +318,7 @@ note.textContent =
 await updateManifest();
 
 } catch (error) {
-  console.error("[Car Dashboard] Load releases error:", error);
+  console.error("[CarHUD] Load releases error:", error);
 
   releases = [];
   releaseSelect.innerHTML = "";
