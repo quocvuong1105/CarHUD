@@ -1,5 +1,5 @@
 /**
- * CarCYD - Vehicle dashboard for LCDWiki ES3C28P / ES3N28P
+ * CarHUD - Vehicle dashboard for LCDWiki ES3C28P / ES3N28P
  *
  * Board:     ESP32S3 Dev Module (esp32 by Espressif Systems, core 3.x)
  * Libraries: lvgl 9.x, LovyanGFX 1.2.x

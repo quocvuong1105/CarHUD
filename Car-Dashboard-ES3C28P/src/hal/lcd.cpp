@@ -12,7 +12,7 @@ class LcdWikiDevice final : public lgfx::LGFX_Device {
     auto bus_cfg = bus_.config();
     bus_cfg.spi_host = SPI2_HOST;
     bus_cfg.spi_mode = 0;
-    bus_cfg.freq_write = LCDWIKI_LCD_SPI_HZ;
+    bus_cfg.freq_write = ESP32S3_LCD_SPI_HZ;
     bus_cfg.freq_read = 16000000;
     bus_cfg.spi_3wire = false;
     bus_cfg.use_lock = true;

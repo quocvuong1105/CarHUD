@@ -13,7 +13,7 @@ on:
         description: "Release notes"
         required: true
         type: string
-        default: "Car Dashboard ESP32-S3 firmware release"
+        default: "CarHUD ESP32-S3 firmware release"
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
 
       - name: Validate version
         env:
@@ -131,7 +131,7 @@ jobs:
           mkdir -p firmware-release
 
           cp "$MERGED_FILE" \
-            firmware-release/CarCYD-ES3C28P-merged.bin
+            firmware-release/CarHUD-ES3C28P-merged.bin
 
           echo "Prepared firmware:"
           ls -lh firmware-release/
@@ -139,8 +139,8 @@ jobs:
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Car-Dashboard-ES3C28P-${{ inputs.version }}
-          path: firmware-release/CarCYD-ES3C28P-merged.bin
+          name: CarHUD-${{ inputs.version }}
+          path: firmware-release/CarHUD-ES3C28P-merged.bin
           if-no-files-found: error
           retention-days: 90
 
@@ -148,20 +148,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
-          name: Car Dashboard ESP32-S3 ${{ inputs.version }}
+          name: CarHUD ESP32-S3 ${{ inputs.version }}
           body: |
             ${{ inputs.release_notes }}
 
             ## Firmware
-            - Board: LCDWiki ES3C28P
+            - Board platform: ESP32-S3
+            - Board variants: ES3C28P / ES3N28P
             - Chip: ESP32-S3
             - Flash: 16 MB
             - PSRAM: OPI
 
             Firmware file:
-            - CarCYD-ES3C28P-merged.bin
-          target_commitish: main
-          files: firmware-release/CarCYD-ES3C28P-merged.bin
+            - CarHUD-ES3C28P-merged.bin
+          target_commitish: ${{ github.ref_name }}
+          files: firmware-release/CarHUD-ES3C28P-merged.bin
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
@@ -196,10 +197,10 @@ jobs:
 
             if gh release download "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --pattern "CarCYD-ES3C28P-merged.bin" \
+              --pattern "CarHUD-ES3C28P-merged.bin" \
               --dir "$TMP_DIR"; then
 
-              cp "$TMP_DIR/CarCYD-ES3C28P-merged.bin" \
+              cp "$TMP_DIR/CarHUD-ES3C28P-merged.bin" \
                 "webflasher/firmware/${TAG}.bin"
 
               echo "Added: ${TAG}.bin"

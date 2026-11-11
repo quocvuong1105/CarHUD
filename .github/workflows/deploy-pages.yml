@@ -1,4 +1,4 @@
-name: Deploy CarCYD Flasher to GitHub Pages
+name: Deploy CarHUD Flasher to GitHub Pages
 
 on:
   push:
