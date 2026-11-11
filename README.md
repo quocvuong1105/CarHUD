@@ -1,12 +1,12 @@
-# CarHUD – LCDWiki ES3C28P / ES3N28P
+# CarHUD – ESP32-S3 (ES3C28P / ES3N28P)
 
-CarHUD là firmware bảng đồng hồ xe sử dụng ESP32-S3 và màn hình LCDWiki ES3C28P/ES3N28P.
+CarHUD là firmware bảng đồng hồ xe sử dụng ESP32-S3 và bo ESP32-S3 phiên bản ES3C28P/ES3N28P.
 
 Mã nguồn được phát triển từ dự án nền tảng [Car Dashboard ESP32 CYD](https://github.com/muki01/Car-Dashboard-ESP32-CYD), sau đó điều chỉnh phần cứng và phát triển theo định hướng CarHUD.
 
 ## Phần cứng hỗ trợ
 
-- LCDWiki ES3C28P / ES3N28P, ESP32-S3.
+- Nền tảng ESP32-S3, biến thể bo ES3C28P / ES3N28P.
 - LCD ILI9341V: SPI SCK=GPIO12, MOSI=GPIO11, MISO=GPIO13, CS=GPIO10, DC=GPIO46; RESET dùng chung EN.
 - Đèn nền LCD: GPIO45, active HIGH.
 - Cảm ứng FT6336G: I2C SDA=GPIO16, SCL=GPIO15, địa chỉ 0x38; RESET=GPIO18, INT=GPIO17.
