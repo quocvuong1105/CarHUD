@@ -54,6 +54,12 @@ void sanitize(Settings& s) {
   if (s.overspeed_kmh != 0) s.overspeed_kmh = clamp<uint16_t>(s.overspeed_kmh, 30, 250);
   s.volume = clamp<uint8_t>(s.volume, 0, 100);
   s.dash_view = clamp<uint8_t>(s.dash_view, 0, 1);
+  s.obd_source = clamp<uint8_t>(s.obd_source, 0, 3);
+  s.wifi_ssid[sizeof(s.wifi_ssid) - 1] = 0;
+  s.wifi_password[sizeof(s.wifi_password) - 1] = 0;
+  s.wifi_obd_host[sizeof(s.wifi_obd_host) - 1] = 0;
+  s.ble_address[sizeof(s.ble_address) - 1] = 0;
+  if (s.wifi_obd_port == 0) s.wifi_obd_port = 35000;
 
   for (auto& slot : s.corner_slots) slot = sanitize_enum(slot, SignalId::Count, SignalId::CoolantTemp);
   for (auto& slot : s.gauge_slots) slot = sanitize_enum(slot, SignalId::Count, SignalId::EngineLoad);
@@ -89,6 +95,10 @@ Settings defaults() {
   s.volume = 60;
   s.status_led = true;
   s.demo_mode = true;
+  s.obd_source = 0;
+  s.wifi_enabled = false;
+  s.ble_enabled = false;
+  s.wifi_obd_port = 35000;
   s.dash_view = 0;
   s.corner_slots[0] = SignalId::CoolantTemp;
   s.corner_slots[1] = SignalId::BatteryVoltage;
