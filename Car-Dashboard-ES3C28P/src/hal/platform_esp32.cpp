@@ -107,19 +107,19 @@ bool ble_connect(const char* address) {
     BLEDevice::init("");
     g_ble_initialized = true;
   }
-  if (g_ble_client != nullptr) {
-    if (g_ble_client->isConnected()) g_ble_client->disconnect();
-    BLEDevice::deleteClient(g_ble_client);
-    g_ble_client = nullptr;
-  }
+
   g_ble_connected = false;
-  g_ble_client = BLEDevice::createClient();
-  if (g_ble_client == nullptr) return false;
-  if (!g_ble_client->connect(BLEAddress(address))) {
-    BLEDevice::deleteClient(g_ble_client);
-    g_ble_client = nullptr;
-    return false;
+  // Arduino-ESP32 BLE 3.2.1 has no client-deletion API.
+  // Reuse the client object; disconnect it before attempting another device.
+  if (g_ble_client != nullptr && g_ble_client->isConnected()) {
+    g_ble_client->disconnect();
   }
+  if (g_ble_client == nullptr) {
+    g_ble_client = BLEDevice::createClient();
+  }
+  if (g_ble_client == nullptr) return false;
+  if (!g_ble_client->connect(BLEAddress(address))) return false;
+
   // A successful GATT connection is distinct from a successful OBD-II
   // command exchange; the latter is verified by the data-link layer.
   g_ble_connected = g_ble_client->isConnected();
@@ -128,10 +128,8 @@ bool ble_connect(const char* address) {
 
 void ble_disconnect() {
   g_ble_connected = false;
-  if (g_ble_client != nullptr) {
-    if (g_ble_client->isConnected()) g_ble_client->disconnect();
-    BLEDevice::deleteClient(g_ble_client);
-    g_ble_client = nullptr;
+  if (g_ble_client != nullptr && g_ble_client->isConnected()) {
+    g_ble_client->disconnect();
   }
 }
 
