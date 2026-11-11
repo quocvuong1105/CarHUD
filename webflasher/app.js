@@ -1,7 +1,8 @@
 ```javascript
 // ======================================================
 // CARHUD - ESP32-S3 WEB FLASHER
-// Board: LCDWiki ES3C28P
+// Platform: ESP32-S3
+// Board variants: ES3C28P / ES3N28P
 // ======================================================
 
 // 1. CONFIGURATION
