@@ -52,6 +52,7 @@ lv_obj_t* g_ble_scan_status = nullptr;
 bool g_ble_scan_pending = false;
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
+lv_obj_t* g_wifi_ip_label = nullptr;
 bool g_wifi_connect_pending = false;
 uint32_t g_wifi_connect_started = 0;
 
@@ -495,6 +496,7 @@ void SettingsPage::close_section() {
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
   g_ble_scan_status = nullptr;
   g_wifi_status = nullptr;
+  g_wifi_ip_label = nullptr;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
 }
@@ -517,6 +519,7 @@ void SettingsPage::update(uint32_t now_ms) {
     lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
   }
   if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_status != nullptr) {
+    if (g_wifi_ip_label != nullptr) set_text(g_wifi_ip_label, platform::wifi_ip_address());
     if (g_wifi_connect_pending && platform::wifi_connected()) {
       g_wifi_connect_pending = false;
       char status[48];
@@ -717,7 +720,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       wifi_textarea(list, "Tên mạng (SSID)", s.wifi_ssid, kWifiSsid);
       wifi_textarea(list, "Mật khẩu Wi-Fi", s.wifi_password, kWifiPassword, true);
       rows::action(list, ICON_LINK, "Kết nối Wi-Fi", color::accent(), on_wifi_connect, nullptr);
-      rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
+      g_wifi_ip_label = rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
 
       rows::section(list, "Thiết bị ELM327 Wi-Fi");
       char port[8];
