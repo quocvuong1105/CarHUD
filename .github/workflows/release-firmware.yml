@@ -153,7 +153,8 @@ jobs:
             ${{ inputs.release_notes }}
 
             ## Firmware
-            - Board: LCDWiki ES3C28P
+            - Board platform: ESP32-S3
+            - Board variants: ES3C28P / ES3N28P
             - Chip: ESP32-S3
             - Flash: 16 MB
             - PSRAM: OPI
