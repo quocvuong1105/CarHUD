@@ -195,6 +195,8 @@ void on_data_source(lv_event_t* e) {
   edit().demo_mode = selected_segment(e) == 0;
   commit(chg::kChangeDataSource);
 }
+void reopen_async(void* section);
+
 void free_ble_address(lv_event_t* e) {
   delete[] static_cast<char*>(lv_event_get_user_data(e));
 }
