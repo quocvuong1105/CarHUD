@@ -47,6 +47,18 @@ void ble_scan_complete(BLEScanResults results) {
     found[i].rssi = static_cast<int16_t>(device.getRSSI());
   }
 
+  // Sort by RSSI descending: values closer to 0 dBm are stronger.
+  // Insertion sort keeps the original order for devices with equal RSSI.
+  for (uint8_t i = 1; i < count; ++i) {
+    const BleDeviceInfo current = found[i];
+    int8_t j = static_cast<int8_t>(i) - 1;
+    while (j >= 0 && found[j].rssi < current.rssi) {
+      found[j + 1] = found[j];
+      --j;
+    }
+    found[j + 1] = current;
+  }
+
   portENTER_CRITICAL(&g_ble_mux);
   memcpy(g_ble_devices, found, sizeof(found));
   g_ble_device_count = count;
