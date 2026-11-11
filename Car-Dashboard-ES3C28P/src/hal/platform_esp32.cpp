@@ -9,6 +9,8 @@
 #include <BLEScan.h>
 #include <BLEClient.h>
 #include <string.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 
 #include "../config/board_config.h"
 #include "../core/platform.h"
@@ -31,6 +33,8 @@ bool g_ble_initialized = false;
 BLEClient* g_ble_client = nullptr;
 bool g_ble_connected = false;
 portMUX_TYPE g_ble_mux = portMUX_INITIALIZER_UNLOCKED;
+WiFiClient g_wifi_obd_client;
+String g_wifi_ip;
 
 void ble_scan_complete(BLEScanResults results) {
   BleDeviceInfo found[kBleMaxDevices] = {};
@@ -158,6 +162,49 @@ bool ble_scan_get(uint8_t index, BleDeviceInfo& out) {
   portEXIT_CRITICAL(&g_ble_mux);
   return valid;
 }
+
+bool wifi_connect(const char* ssid, const char* password) {
+  if (ssid == nullptr || ssid[0] == 0) return false;
+  wifi_obd_disconnect();
+  if (WiFi.status() == WL_CONNECTED && WiFi.SSID() == ssid) return true;
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password == nullptr ? "" : password);
+  return true;  // Connection is asynchronous; poll wifi_connected().
+}
+
+void wifi_disconnect() {
+  wifi_obd_disconnect();
+  WiFi.disconnect(true, false);
+}
+
+bool wifi_connected() { return WiFi.status() == WL_CONNECTED; }
+
+const char* wifi_ip_address() {
+  g_wifi_ip = wifi_connected() ? WiFi.localIP().toString() : String("--");
+  return g_wifi_ip.c_str();
+}
+
+bool wifi_obd_connect(const char* host, uint16_t port) {
+  if (!wifi_connected() || host == nullptr || host[0] == 0 || port == 0) return false;
+  wifi_obd_disconnect();
+  return g_wifi_obd_client.connect(host, port, 3000);
+}
+
+void wifi_obd_disconnect() {
+  if (g_wifi_obd_client.connected()) g_wifi_obd_client.stop();
+}
+
+bool wifi_obd_connected() { return g_wifi_obd_client.connected(); }
+
+size_t wifi_obd_write(const uint8_t* data, size_t length) {
+  if (!wifi_obd_connected() || data == nullptr || length == 0) return 0;
+  return g_wifi_obd_client.write(data, length);
+}
+
+int wifi_obd_available() { return wifi_obd_connected() ? g_wifi_obd_client.available() : 0; }
+
+int wifi_obd_read() { return wifi_obd_connected() ? g_wifi_obd_client.read() : -1; }
 
 void system_info(SystemInfo& out) {
   out.chip_model = ESP.getChipModel();
