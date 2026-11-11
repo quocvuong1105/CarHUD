@@ -48,6 +48,8 @@ const char* g_sources[3] = {};  // translated at build time
 
 SettingsPage* g_self = nullptr;
 uint8_t g_built_obd_source = 0xFF;
+lv_obj_t* g_ble_scan_status = nullptr;
+bool g_ble_scan_pending = false;
 
 bool switch_on(lv_event_t* e) { return lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED); }
 int32_t slider_value(lv_event_t* e) { return lv_slider_get_value(lv_event_get_target_obj(e)); }
@@ -193,6 +195,28 @@ void on_data_source(lv_event_t* e) {
   edit().demo_mode = selected_segment(e) == 0;
   commit(chg::kChangeDataSource);
 }
+void free_ble_address(lv_event_t* e) {
+  delete[] static_cast<char*>(lv_event_get_user_data(e));
+}
+
+void on_ble_device(lv_event_t* e) {
+  const char* address = static_cast<const char*>(lv_event_get_user_data(e));
+  if (address == nullptr || address[0] == 0) return;
+  snprintf(edit().ble_address, sizeof(edit().ble_address), "%s", address);
+  commit(chg::kChangeConnection);
+  lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  platform::play(platform::Sound::Confirm);
+}
+
+void on_ble_scan(lv_event_t*) {
+  if (platform::ble_scan_start()) {
+    g_ble_scan_pending = true;
+    if (g_ble_scan_status != nullptr) set_text(g_ble_scan_status, "Đang quét thiết bị BLE...");
+  } else if (g_ble_scan_status != nullptr) {
+    set_text(g_ble_scan_status, "Không thể bắt đầu quét BLE.");
+  }
+}
+
 void on_obd_source(lv_event_t* e) {
   const uint8_t source = static_cast<uint8_t>(selected_segment(e));
   edit().obd_source = source;
@@ -379,6 +403,7 @@ void SettingsPage::close_section() {
   }
   ambient_label_ = night_row_ = day_title_ = brightness_value_ = night_value_ = nullptr;
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
+  g_ble_scan_status = nullptr;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
 }
@@ -395,6 +420,11 @@ bool SettingsPage::on_back() {
 
 void SettingsPage::update(uint32_t now_ms) {
   if (detail_ == nullptr) return;
+  if (section_ == Section::Connection && g_ble_scan_pending &&
+      platform::ble_scan_completed() && !platform::ble_scan_active()) {
+    g_ble_scan_pending = false;
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
   if (last_live_ms_ != 0 && now_ms - last_live_ms_ < kLiveUpdateMs) return;
   last_live_ms_ = now_ms;
   update_live_values(now_ms);
@@ -545,11 +575,32 @@ void SettingsPage::build_connection(lv_obj_t* list) {
     case 0:
       rows::note(list, "Demo đang sử dụng dữ liệu mô phỏng hiện tại.");
       break;
-    case 1:
+    case 1: {
       rows::section(list, "Bluetooth");
       rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
-      rows::note(list, "Chọn Bluetooth BLE ở Nguồn dữ liệu để kích hoạt nguồn này.");
+      rows::action(list, ICON_REFRESH, "Quét thiết bị Bluetooth", color::text(), on_ble_scan, nullptr);
+
+      const uint8_t count = platform::ble_scan_count();
+      if (count == 0) {
+        g_ble_scan_status = rows::note(
+            list, platform::ble_scan_active() ? "Đang quét thiết bị BLE..." :
+                  (platform::ble_scan_completed() ? "Không tìm thấy thiết bị BLE." :
+                   "Nhấn Quét thiết bị Bluetooth để tìm thiết bị ở gần."));
+      } else {
+        g_ble_scan_status = rows::note(list, "Chọn thiết bị BLE để lưu làm adapter OBD-II:");
+        for (uint8_t i = 0; i < count; ++i) {
+          platform::BleDeviceInfo device{};
+          if (!platform::ble_scan_get(i, device)) continue;
+          char rssi[20];
+          snprintf(rssi, sizeof(rssi), "%d dBm", static_cast<int>(device.rssi));
+          char* address = new char[sizeof(device.address)];
+          snprintf(address, sizeof(device.address), "%s", device.address);
+          lv_obj_t* value = rows::nav(list, ICON_LINK, device.name, rssi, on_ble_device, address);
+          lv_obj_add_event_cb(lv_obj_get_parent(value), free_ble_address, LV_EVENT_DELETE, address);
+        }
+      }
       break;
+    }
     case 2:
       rows::section(list, "Wi-Fi");
       rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn");

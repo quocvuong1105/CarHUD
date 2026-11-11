@@ -5,6 +5,9 @@
  * application data first.
  */
 #include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEScan.h>
+#include <string.h>
 
 #include "../config/board_config.h"
 #include "../core/platform.h"
@@ -16,8 +19,90 @@
 #include "touch.h"
 
 namespace platform {
+namespace {
+
+constexpr uint8_t kBleMaxDevices = 16;
+BleDeviceInfo g_ble_devices[kBleMaxDevices] = {};
+uint8_t g_ble_device_count = 0;
+volatile bool g_ble_scan_active = false;
+volatile bool g_ble_scan_completed = false;
+bool g_ble_initialized = false;
+portMUX_TYPE g_ble_mux = portMUX_INITIALIZER_UNLOCKED;
+
+void ble_scan_complete(BLEScanResults results) {
+  BleDeviceInfo found[kBleMaxDevices] = {};
+  const uint32_t total = results.getCount();
+  const uint8_t count = static_cast<uint8_t>(total < kBleMaxDevices ? total : kBleMaxDevices);
+
+  for (uint8_t i = 0; i < count; ++i) {
+    BLEAdvertisedDevice device = results.getDevice(i);
+    const std::string address = device.getAddress().toString();
+    const std::string name = device.haveName() ? device.getName() : std::string();
+    snprintf(found[i].address, sizeof(found[i].address), "%s", address.c_str());
+    snprintf(found[i].name, sizeof(found[i].name), "%s", name.empty() ? "(Không có tên)" : name.c_str());
+    found[i].rssi = static_cast<int16_t>(device.getRSSI());
+  }
+
+  portENTER_CRITICAL(&g_ble_mux);
+  memcpy(g_ble_devices, found, sizeof(found));
+  g_ble_device_count = count;
+  g_ble_scan_active = false;
+  g_ble_scan_completed = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+}
+
+}  // namespace
 
 uint32_t millis() { return ::millis(); }
+
+bool ble_scan_start() {
+  if (g_ble_scan_active) return false;
+  if (!g_ble_initialized) {
+    BLEDevice::init("");
+    g_ble_initialized = true;
+  }
+
+  BLEScan* scanner = BLEDevice::getScan();
+  if (scanner == nullptr) return false;
+  scanner->setActiveScan(true);
+  scanner->setInterval(100);
+  scanner->setWindow(99);
+  scanner->clearResults();
+
+  portENTER_CRITICAL(&g_ble_mux);
+  g_ble_device_count = 0;
+  g_ble_scan_completed = false;
+  g_ble_scan_active = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+
+  if (!scanner->start(6, ble_scan_complete, false)) {
+    portENTER_CRITICAL(&g_ble_mux);
+    g_ble_scan_active = false;
+    g_ble_scan_completed = true;
+    portEXIT_CRITICAL(&g_ble_mux);
+    return false;
+  }
+  return true;
+}
+
+bool ble_scan_active() { return g_ble_scan_active; }
+
+bool ble_scan_completed() { return g_ble_scan_completed; }
+
+uint8_t ble_scan_count() {
+  portENTER_CRITICAL(&g_ble_mux);
+  const uint8_t count = g_ble_device_count;
+  portEXIT_CRITICAL(&g_ble_mux);
+  return count;
+}
+
+bool ble_scan_get(uint8_t index, BleDeviceInfo& out) {
+  portENTER_CRITICAL(&g_ble_mux);
+  const bool valid = index < g_ble_device_count;
+  if (valid) memcpy(&out, &g_ble_devices[index], sizeof(out));
+  portEXIT_CRITICAL(&g_ble_mux);
+  return valid;
+}
 
 void system_info(SystemInfo& out) {
   out.chip_model = ESP.getChipModel();

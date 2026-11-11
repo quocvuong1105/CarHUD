@@ -16,6 +16,21 @@ namespace platform {
 
 uint32_t millis();
 
+// ---- Bluetooth Low Energy discovery --------------------------------------------
+
+struct BleDeviceInfo {
+  char name[32];
+  char address[18];
+  int16_t rssi;
+};
+
+/** Starts a non-blocking BLE scan. Results become available when it completes. */
+bool ble_scan_start();
+bool ble_scan_active();
+bool ble_scan_completed();
+uint8_t ble_scan_count();
+bool ble_scan_get(uint8_t index, BleDeviceInfo& out);
+
 // ---- System information ---------------------------------------------------------
 
 struct SystemInfo {
