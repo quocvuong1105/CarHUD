@@ -589,7 +589,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
           platform::BleDeviceInfo device{};
           if (!platform::ble_scan_get(i, device)) continue;
           char rssi[20];
-          snprintf(rssi, sizeof(rssi), "%.17s · %d dBm", device.address, static_cast<int>(device.rssi));
+          snprintf(rssi, sizeof(rssi), "%d dBm", static_cast<int>(device.rssi));
           char* address = new char[sizeof(device.address)];
           snprintf(address, sizeof(device.address), "%s", device.address);
           lv_obj_t* value = rows::nav(list, ICON_LINK, device.name, rssi, on_ble_device, address);
