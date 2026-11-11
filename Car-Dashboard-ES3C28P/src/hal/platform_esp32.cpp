@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <BLEDevice.h>
 #include <BLEScan.h>
+#include <BLEClient.h>
 #include <string.h>
 
 #include "../config/board_config.h"
@@ -27,6 +28,8 @@ uint8_t g_ble_device_count = 0;
 volatile bool g_ble_scan_active = false;
 volatile bool g_ble_scan_completed = false;
 bool g_ble_initialized = false;
+BLEClient* g_ble_client = nullptr;
+bool g_ble_connected = false;
 portMUX_TYPE g_ble_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void ble_scan_complete(BLEScanResults results) {
@@ -40,7 +43,7 @@ void ble_scan_complete(BLEScanResults results) {
     const String name = device.haveName() ? device.getName() : String();
     snprintf(found[i].address, sizeof(found[i].address), "%s", address.c_str());
     snprintf(found[i].name, sizeof(found[i].name), "%s",
-             name.length() == 0 ? "(Không có tên)" : name.c_str());
+             name.length() == 0 ? "BLE Device" : name.c_str());
     found[i].rssi = static_cast<int16_t>(device.getRSSI());
   }
 
@@ -84,6 +87,45 @@ bool ble_scan_start() {
     return false;
   }
   return true;
+}
+
+bool ble_connect(const char* address) {
+  if (address == nullptr || address[0] == 0) return false;
+  if (!g_ble_initialized) {
+    BLEDevice::init("");
+    g_ble_initialized = true;
+  }
+  if (g_ble_client != nullptr) {
+    if (g_ble_client->isConnected()) g_ble_client->disconnect();
+    BLEDevice::deleteClient(g_ble_client);
+    g_ble_client = nullptr;
+  }
+  g_ble_connected = false;
+  g_ble_client = BLEDevice::createClient();
+  if (g_ble_client == nullptr) return false;
+  if (!g_ble_client->connect(BLEAddress(address))) {
+    BLEDevice::deleteClient(g_ble_client);
+    g_ble_client = nullptr;
+    return false;
+  }
+  // A successful GATT connection is distinct from a successful OBD-II
+  // command exchange; the latter is verified by the data-link layer.
+  g_ble_connected = g_ble_client->isConnected();
+  return g_ble_connected;
+}
+
+void ble_disconnect() {
+  g_ble_connected = false;
+  if (g_ble_client != nullptr) {
+    if (g_ble_client->isConnected()) g_ble_client->disconnect();
+    BLEDevice::deleteClient(g_ble_client);
+    g_ble_client = nullptr;
+  }
+}
+
+bool ble_connected() {
+  g_ble_connected = g_ble_client != nullptr && g_ble_client->isConnected();
+  return g_ble_connected;
 }
 
 bool ble_scan_active() { return g_ble_scan_active; }
