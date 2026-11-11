@@ -1,4 +1,4 @@
-# CarCYD Firmware Flasher
+# CarHUD Firmware Flasher
 
 Website tĩnh dùng GitHub Pages + ESP Web Tools. Website đọc GitHub Releases để hiển thị phiên bản mới nhất và các bản cũ.
 
@@ -6,15 +6,15 @@ Website tĩnh dùng GitHub Pages + ESP Web Tools. Website đọc GitHub Releases
 
 Trong `app.js`, xác nhận:
 - `OWNER = "quocvuong1105"`
-- `REPO = "Car-Dashboard-ES3C28P"`
+- `REPO = "CarHUD"`
 
 Nếu repository đổi tên hoặc owner, cập nhật hai giá trị này.
 
 ## Quy ước asset bắt buộc trong mỗi GitHub Release
 
 Mỗi Release cần đính kèm các file merged binary đúng tên:
-- `CarCYD-ES3C28P-merged.bin`
-- `CarCYD-ES3N28P-merged.bin`
+- `CarHUD-ES3C28P-merged.bin`
+- `CarHUD-ES3N28P-merged.bin`
 
 Chỉ đính kèm file cho bo đã được build và kiểm tra. Không đổi tên một binary chung thành hai biến thể nếu chưa xác nhận pinout và phần cứng hai mẫu tương thích.
 
@@ -25,7 +25,7 @@ Chỉ đính kèm file cho bo đã được build và kiểm tra. Không đổi 
 1. Đưa thư mục `webflasher/` lên thư mục gốc repository.
 2. Đưa workflow `deploy-pages.yml` vào `.github/workflows/`.
 3. GitHub → Settings → Pages → Build and deployment → Source: GitHub Actions.
-4. Actions → Deploy CarCYD Flasher to GitHub Pages → Run workflow (hoặc push commit lên main).
+4. Actions → Deploy CarHUD Flasher to GitHub Pages → Run workflow (hoặc push commit lên main).
 5. Sau khi deploy xanh, mở URL Pages hiển thị trong Settings → Pages.
 
 ## Lưu ý
