@@ -1,4 +1,4 @@
-name: Build CarHUD for LCDWiki ES3C28P
+name: Build CarHUD for ESP32-S3 (ES3C28P / ES3N28P)
 
 on:
   push:
