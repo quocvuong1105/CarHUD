@@ -6,6 +6,7 @@
 #include "persist.h"
 #include "util.h"
 
+#include <cstdio>
 namespace core::settings {
 namespace {
 
