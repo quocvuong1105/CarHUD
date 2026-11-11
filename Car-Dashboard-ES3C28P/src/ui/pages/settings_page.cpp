@@ -199,10 +199,13 @@ void free_ble_address(lv_event_t* e) {
 void on_ble_device(lv_event_t* e) {
   const char* address = static_cast<const char*>(lv_event_get_user_data(e));
   if (address == nullptr || address[0] == 0) return;
+  // Selecting a scan result now attempts a real BLE GATT connection.
+  // Keep the selected address even when the adapter is currently unavailable.
   snprintf(edit().ble_address, sizeof(edit().ble_address), "%s", address);
+  const bool connected = platform::ble_connect(address);
   commit(chg::kChangeConnection);
   lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
-  platform::play(platform::Sound::Confirm);
+  platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
 }
 
 void on_ble_scan(lv_event_t*) {
@@ -414,6 +417,11 @@ void SettingsPage::update(uint32_t now_ms) {
     g_ble_scan_pending = false;
     lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
   }
+  if (section_ == Section::Connection && link_status_ != nullptr && get().obd_source == 1) {
+    set_text(link_status_, platform::ble_connected()
+        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
+        : (get().ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị"));
+  }
   if (last_live_ms_ != 0 && now_ms - last_live_ms_ < kLiveUpdateMs) return;
   last_live_ms_ = now_ms;
   update_live_values(now_ms);
@@ -581,7 +589,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
           platform::BleDeviceInfo device{};
           if (!platform::ble_scan_get(i, device)) continue;
           char rssi[20];
-          snprintf(rssi, sizeof(rssi), "%d dBm", static_cast<int>(device.rssi));
+          snprintf(rssi, sizeof(rssi), "%.17s · %d dBm", device.address, static_cast<int>(device.rssi));
           char* address = new char[sizeof(device.address)];
           snprintf(address, sizeof(device.address), "%s", device.address);
           lv_obj_t* value = rows::nav(list, ICON_LINK, device.name, rssi, on_ble_device, address);
@@ -602,7 +610,11 @@ void SettingsPage::build_connection(lv_obj_t* list) {
   }
 
   rows::section(list, "Trạng thái OBD-II");
-  link_status_ = rows::info(list, ICON_LINK, "Trạng thái", "Chưa nhận dữ liệu OBD-II");
+  const char* connection_status =
+      source == 1 ? (platform::ble_connected() ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" :
+                     (s.ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị")) :
+      "Chưa nhận dữ liệu OBD-II";
+  link_status_ = rows::info(list, ICON_LINK, "Trạng thái", connection_status);
 }
 
 void SettingsPage::build_system(lv_obj_t* list) {
