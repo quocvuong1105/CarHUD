@@ -43,6 +43,7 @@ const char* const kTempUnits[] = {"°C", "°F", nullptr};
 const char* const kPressureUnits[] = {"kPa", "bar", "psi", nullptr};
 const char* const kRpmRanges[] = {"5000", "6000", "7000", "8000", "9000", nullptr};
 const char* const kLanguages[] = {"English", "Türkçe", "Tiếng Việt", nullptr};
+const char* const kObdSources[] = {"Auto", "BLE", "Wi-Fi", "USB", nullptr};
 const char* g_sources[3] = {};  // translated at build time
 
 SettingsPage* g_self = nullptr;
@@ -190,6 +191,18 @@ void on_status_led(lv_event_t* e) {
 void on_data_source(lv_event_t* e) {
   edit().demo_mode = selected_segment(e) == 0;
   commit(chg::kChangeDataSource);
+}
+void on_obd_source(lv_event_t* e) {
+  edit().obd_source = static_cast<uint8_t>(selected_segment(e));
+  commit(chg::kChangeConnection);
+}
+void on_wifi_enabled(lv_event_t* e) {
+  edit().wifi_enabled = switch_on(e);
+  commit(chg::kChangeConnection);
+}
+void on_ble_enabled(lv_event_t* e) {
+  edit().ble_enabled = switch_on(e);
+  commit(chg::kChangeConnection);
 }
 void on_language(lv_event_t* e) {
   const auto lang = static_cast<core::Language>(selected_segment(e));
@@ -512,13 +525,30 @@ void SettingsPage::build_sound(lv_obj_t* list) {
 }
 
 void SettingsPage::build_connection(lv_obj_t* list) {
-  g_sources[0] = core::tr(core::Str::SET_SRC_DEMO);
-  g_sources[1] = core::tr(core::Str::SET_SRC_LINK);
-  g_sources[2] = nullptr;
-  rows::segmented(list, ICON_DATABASE, core::tr(core::Str::SET_DATA_SOURCE), g_sources, get().demo_mode ? 0 : 1,
-                  on_data_source, nullptr);
-  link_status_ = rows::info(list, ICON_LINK, core::tr(core::Str::SET_LINK_STATUS), "");
-  rows::note(list, core::tr(core::Str::SET_DEMO_HINT));
+  rows::section(list, "OBD-II");
+  rows::segmented(list, ICON_DATABASE, "Nguồn dữ liệu", kObdSources, get().obd_source, on_obd_source, nullptr);
+  rows::note(list, "Auto sẽ chọn nguồn đã được hỗ trợ. USB hiện chưa triển khai.");
+
+  rows::section(list, "Wi-Fi");
+  rows::toggle(list, ICON_LINK, "Bật Wi-Fi", "Quét mạng và cấu hình SSID sẽ được kích hoạt cùng dịch vụ Wi-Fi.",
+               get().wifi_enabled, on_wifi_enabled, nullptr);
+  rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", get().wifi_ssid[0] ? get().wifi_ssid : "Chưa chọn");
+  rows::info(list, ICON_LINK, "Trạng thái Wi-Fi", "Chưa khởi tạo dịch vụ");
+
+  rows::section(list, "Bluetooth");
+  rows::toggle(list, ICON_LINK, "Bật Bluetooth BLE", "ESP32-S3 hỗ trợ BLE, không hỗ trợ Bluetooth Classic.",
+               get().ble_enabled, on_ble_enabled, nullptr);
+  rows::info(list, ICON_DATABASE, "Thiết bị BLE", get().ble_address[0] ? get().ble_address : "Chưa chọn");
+  rows::info(list, ICON_LINK, "Trạng thái BLE", "Chưa khởi tạo dịch vụ");
+
+  rows::section(list, "USB");
+  rows::info(list, ICON_DATABASE, "Thiết bị USB", "Chưa hỗ trợ trong phiên bản này");
+  rows::info(list, ICON_LINK, "Trạng thái USB", "Chưa triển khai");
+
+  rows::section(list, "Trạng thái OBD-II");
+  rows::info(list, ICON_DATABASE, "Nguồn đang sử dụng", "Chưa có nguồn hoạt động");
+  rows::info(list, ICON_CAR_INFO, "Thiết bị", "Chưa nhận diện");
+  link_status_ = rows::info(list, ICON_LINK, "Trạng thái", "Chưa nhận dữ liệu OBD-II");
 }
 
 void SettingsPage::build_system(lv_obj_t* list) {
