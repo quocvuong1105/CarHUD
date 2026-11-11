@@ -44,7 +44,6 @@ const char* const kPressureUnits[] = {"kPa", "bar", "psi", nullptr};
 const char* const kRpmRanges[] = {"5000", "6000", "7000", "8000", "9000", nullptr};
 const char* const kLanguages[] = {"English", "Türkçe", "Tiếng Việt", nullptr};
 const char* const kObdSources[] = {"Demo", "Bluetooth", "Wi-Fi", "USB", nullptr};
-const char* g_sources[3] = {};  // translated at build time
 
 SettingsPage* g_self = nullptr;
 uint8_t g_built_obd_source = 0xFF;
@@ -191,10 +190,6 @@ void on_status_led(lv_event_t* e) {
   edit().status_led = switch_on(e);
   commit(chg::kChangeLed);
 }
-void on_data_source(lv_event_t* e) {
-  edit().demo_mode = selected_segment(e) == 0;
-  commit(chg::kChangeDataSource);
-}
 void reopen_async(void* section);
 
 void free_ble_address(lv_event_t* e) {
@@ -226,14 +221,6 @@ void on_obd_source(lv_event_t* e) {
   edit().ble_enabled = source == 1;
   edit().wifi_enabled = source == 2;
   commit(chg::kChangeConnection | chg::kChangeDataSource);
-}
-void on_wifi_enabled(lv_event_t* e) {
-  edit().wifi_enabled = switch_on(e);
-  commit(chg::kChangeConnection);
-}
-void on_ble_enabled(lv_event_t* e) {
-  edit().ble_enabled = switch_on(e);
-  commit(chg::kChangeConnection);
 }
 void on_language(lv_event_t* e) {
   const auto lang = static_cast<core::Language>(selected_segment(e));
@@ -580,7 +567,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
     case 1: {
       rows::section(list, "Bluetooth");
       rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
-      rows::action(list, ICON_REFRESH, "Quét thiết bị Bluetooth", color::text(), on_ble_scan, nullptr);
+      rows::action(list, ICON_FLASH, "Quét thiết bị Bluetooth", color::text(), on_ble_scan, nullptr);
 
       const uint8_t count = platform::ble_scan_count();
       if (count == 0) {
