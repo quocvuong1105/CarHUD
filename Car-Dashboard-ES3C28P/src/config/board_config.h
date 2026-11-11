@@ -1,8 +1,8 @@
 /**
  * @file board_config.h
- * LCDWiki ES3C28P / ES3N28P board definition.
+ * ESP32-S3 ES3C28P / ES3N28P board definition.
  * ESP32-S3 N16R8, ILI9341V 240x320 SPI LCD, FT6336G capacitive touch.
- * Pin allocation is based on LCDWiki's official ES3C28P/ES3N28P documentation.
+ * Pin allocation is based on the ES3C28P/ES3N28P hardware documentation.
  */
 #pragma once
 
