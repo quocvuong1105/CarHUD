@@ -253,7 +253,7 @@ void wifi_input_focused(lv_event_t* e) {
   const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
   if (g_wifi_keyboard != nullptr) lv_obj_delete(g_wifi_keyboard);
   g_wifi_keyboard = lv_keyboard_create(lv_layer_top());
-  lv_obj_set_width(g_wifi_keyboard, LV_PCT(100));
+  lv_obj_set_width(g_wifi_keyboard, lv_pct(100));
   lv_obj_align(g_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_keyboard_set_textarea(g_wifi_keyboard, ta);
   lv_keyboard_set_mode(g_wifi_keyboard, field == kWifiPort ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
