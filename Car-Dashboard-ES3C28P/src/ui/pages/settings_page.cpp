@@ -1,6 +1,7 @@
 #include "settings_page.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "../../config/app_config.h"
 #include "../../core/i18n.h"
@@ -49,6 +50,11 @@ SettingsPage* g_self = nullptr;
 uint8_t g_built_obd_source = 0xFF;
 lv_obj_t* g_ble_scan_status = nullptr;
 bool g_ble_scan_pending = false;
+lv_obj_t* g_wifi_keyboard = nullptr;
+lv_obj_t* g_wifi_status = nullptr;
+bool g_wifi_connect_pending = false;
+bool g_wifi_tcp_pending = false;
+
 
 bool switch_on(lv_event_t* e) { return lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED); }
 int32_t slider_value(lv_event_t* e) { return lv_slider_get_value(lv_event_get_target_obj(e)); }
@@ -214,6 +220,98 @@ void on_ble_scan(lv_event_t*) {
     if (g_ble_scan_status != nullptr) set_text(g_ble_scan_status, "Đang quét thiết bị BLE...");
   } else if (g_ble_scan_status != nullptr) {
     set_text(g_ble_scan_status, "Không thể bắt đầu quét BLE.");
+  }
+}
+
+enum WifiField : intptr_t { kWifiSsid = 1, kWifiPassword, kWifiHost, kWifiPort };
+
+void wifi_keyboard_event(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_READY) return;
+  lv_obj_t* keyboard = lv_event_get_current_target_obj(e);
+  lv_obj_t* ta = lv_keyboard_get_textarea(keyboard);
+  const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  const char* value = ta == nullptr ? "" : lv_textarea_get_text(ta);
+  core::Settings& s = edit();
+  switch (field) {
+    case kWifiSsid: snprintf(s.wifi_ssid, sizeof(s.wifi_ssid), "%s", value); break;
+    case kWifiPassword: snprintf(s.wifi_password, sizeof(s.wifi_password), "%s", value); break;
+    case kWifiHost: snprintf(s.wifi_obd_host, sizeof(s.wifi_obd_host), "%s", value); break;
+    case kWifiPort: {
+      const unsigned long port = strtoul(value, nullptr, 10);
+      if (port > 0 && port <= 65535) s.wifi_obd_port = static_cast<uint16_t>(port);
+      break;
+    }
+  }
+  commit(chg::kChangeConnection);
+  g_wifi_keyboard = nullptr;
+  lv_obj_delete_async(keyboard);
+}
+
+void wifi_input_focused(lv_event_t* e) {
+  lv_obj_t* ta = lv_event_get_target_obj(e);
+  const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  if (g_wifi_keyboard != nullptr) lv_obj_delete(g_wifi_keyboard);
+  g_wifi_keyboard = lv_keyboard_create(lv_layer_top());
+  lv_obj_set_width(g_wifi_keyboard, LV_PCT(100));
+  lv_obj_align(g_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_keyboard_set_textarea(g_wifi_keyboard, ta);
+  lv_keyboard_set_mode(g_wifi_keyboard, field == kWifiPort ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
+  lv_obj_add_event_cb(g_wifi_keyboard, wifi_keyboard_event, LV_EVENT_READY, reinterpret_cast<void*>(field));
+  lv_obj_add_event_cb(g_wifi_keyboard, [](lv_event_t* ev) {
+    if (lv_event_get_code(ev) == LV_EVENT_CANCEL) {
+      lv_obj_t* kb = lv_event_get_current_target_obj(ev);
+      g_wifi_keyboard = nullptr;
+      lv_obj_delete_async(kb);
+    }
+  }, LV_EVENT_CANCEL, nullptr);
+}
+
+lv_obj_t* wifi_textarea(lv_obj_t* list, const char* caption, const char* value, intptr_t field,
+                        bool password = false) {
+  label(list, font::body(), color::text(), caption);
+  lv_obj_t* ta = lv_textarea_create(list);
+  lv_obj_set_width(ta, lv_pct(100));
+  lv_obj_set_height(ta, 38);
+  lv_textarea_set_one_line(ta, true);
+  lv_textarea_set_text(ta, value);
+  lv_textarea_set_password_mode(ta, password);
+  lv_obj_add_event_cb(ta, wifi_input_focused, LV_EVENT_FOCUSED, reinterpret_cast<void*>(field));
+  return ta;
+}
+
+void on_wifi_connect(lv_event_t*) {
+  const core::Settings& s = get();
+  if (s.wifi_ssid[0] == 0) {
+    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Chưa nhập tên mạng Wi-Fi.");
+    return;
+  }
+  platform::wifi_obd_disconnect();
+  if (!platform::wifi_connect(s.wifi_ssid, s.wifi_password)) {
+    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Không thể bắt đầu kết nối Wi-Fi.");
+    return;
+  }
+  g_wifi_connect_pending = true;
+  g_wifi_tcp_pending = false;
+  if (g_wifi_status != nullptr) set_text(g_wifi_status, "Đang kết nối Wi-Fi...");
+}
+
+void on_wifi_obd_connect(lv_event_t*) {
+  const core::Settings& s = get();
+  if (!platform::wifi_connected()) {
+    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Hãy kết nối Wi-Fi trước.");
+    return;
+  }
+  if (s.wifi_obd_host[0] == 0 || s.wifi_obd_port == 0) {
+    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Nhập IP và cổng TCP của ELM327.");
+    return;
+  }
+  const bool ok = platform::wifi_obd_connect(s.wifi_obd_host, s.wifi_obd_port);
+  if (g_wifi_status != nullptr) {
+    char status[72];
+    snprintf(status, sizeof(status), "%s %s:%u",
+             ok ? "Đã mở TCP tới" : "Không kết nối được TCP tới",
+             s.wifi_obd_host, static_cast<unsigned>(s.wifi_obd_port));
+    set_text(g_wifi_status, status);
   }
 }
 
@@ -396,6 +494,7 @@ void SettingsPage::close_section() {
   ambient_label_ = night_row_ = day_title_ = brightness_value_ = night_value_ = nullptr;
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
   g_ble_scan_status = nullptr;
+  g_wifi_status = nullptr;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
 }
@@ -416,6 +515,21 @@ void SettingsPage::update(uint32_t now_ms) {
       platform::ble_scan_completed() && !platform::ble_scan_active()) {
     g_ble_scan_pending = false;
     lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
+  if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_status != nullptr) {
+    if (g_wifi_connect_pending && platform::wifi_connected()) {
+      g_wifi_connect_pending = false;
+      char status[48];
+      snprintf(status, sizeof(status), "Wi-Fi đã kết nối · IP ESP32: %s", platform::wifi_ip_address());
+      set_text(g_wifi_status, status);
+    } else if (g_wifi_connect_pending && WiFi.status() == WL_CONNECT_FAILED) {
+      g_wifi_connect_pending = false;
+      set_text(g_wifi_status, "Kết nối Wi-Fi thất bại.");
+    }
+    if (!g_wifi_connect_pending) {
+      set_text(g_wifi_status, platform::wifi_obd_connected() ? "TCP ELM327 đã kết nối" :
+          (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi"));
+    }
   }
   if (section_ == Section::Connection && link_status_ != nullptr && get().obd_source == 1) {
     set_text(link_status_, platform::ble_connected()
@@ -598,11 +712,25 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       }
       break;
     }
-    case 2:
-      rows::section(list, "Wi-Fi");
-      rows::info(list, ICON_DATABASE, "Mạng Wi-Fi", s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn");
-      rows::note(list, "Chọn Wi-Fi ở Nguồn dữ liệu để kích hoạt nguồn này.");
+    case 2: {
+      rows::section(list, "Mạng Wi-Fi của ESP32");
+      wifi_textarea(list, "Tên mạng (SSID)", s.wifi_ssid, kWifiSsid);
+      wifi_textarea(list, "Mật khẩu Wi-Fi", s.wifi_password, kWifiPassword, true);
+      rows::action(list, ICON_LINK, "Kết nối Wi-Fi", color::accent(), on_wifi_connect, nullptr);
+      rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
+
+      rows::section(list, "Thiết bị ELM327 Wi-Fi");
+      char port[8];
+      snprintf(port, sizeof(port), "%u", static_cast<unsigned>(s.wifi_obd_port ? s.wifi_obd_port : 35000));
+      wifi_textarea(list, "IP của ELM327", s.wifi_obd_host, kWifiHost);
+      wifi_textarea(list, "Cổng TCP của ELM327", port, kWifiPort);
+      rows::note(list, "Mặc định tham khảo: 192.168.0.10 và TCP 35000. Kiểm tra thông số thực tế trên adapter.");
+      rows::action(list, ICON_LINK, "Kết nối ELM327 TCP", color::accent(), on_wifi_obd_connect, nullptr);
+      g_wifi_status = rows::info(list, ICON_DATABASE, "Trạng thái Wi-Fi / ELM327",
+          platform::wifi_obd_connected() ? "TCP đã kết nối" :
+          (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP chưa kết nối" : "Chưa kết nối Wi-Fi"));
       break;
+    }
     case 3:
       rows::section(list, "USB");
       rows::note(list, "USB chưa được triển khai; chưa thể nhận dữ liệu OBD-II.");
