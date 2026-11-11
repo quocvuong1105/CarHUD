@@ -8,18 +8,18 @@
 
 #include <stdint.h>
 
-#define LCDWIKI_ES3C28P 1
-#define LCDWIKI_ES3N28P 2
-#ifndef LCDWIKI_BOARD
-#define LCDWIKI_BOARD LCDWIKI_ES3C28P
+#define ESP32S3_ES3C28P 1
+#define ESP32S3_ES3N28P 2
+#ifndef ESP32S3_BOARD
+#define ESP32S3_BOARD ESP32S3_ES3C28P
 #endif
 
-#ifndef LCDWIKI_LCD_SPI_HZ
-#define LCDWIKI_LCD_SPI_HZ 40000000
+#ifndef ESP32S3_LCD_SPI_HZ
+#define ESP32S3_LCD_SPI_HZ 40000000
 #endif
 
 // Compatibility macro retained for existing application references.// Kept as a compatibility macro because the application log uses this name.
-#if LCDWIKI_BOARD == LCDWIKI_ES3N28P
+#if ESP32S3_BOARD == ESP32S3_ES3N28P
 #define CYD_BOARD_NAME "ESP32-S3 ES3N28P"
 #else
 #define CYD_BOARD_NAME "ESP32-S3 ES3N28P"
@@ -58,7 +58,7 @@ constexpr int kSpeaker = -1;
 // BOOT key is GPIO0, active LOW.
 constexpr int kBootButton = 0;
 
-// No CYD CN1 UART mapping is assumed for the LCDWiki board.
+// No CYD CN1 UART mapping is assumed for the ESP32-S3 board.
 constexpr int kLinkRx = -1;
 constexpr int kLinkTx = -1;
 
