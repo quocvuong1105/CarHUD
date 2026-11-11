@@ -53,7 +53,7 @@ bool g_ble_scan_pending = false;
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
 bool g_wifi_connect_pending = false;
-bool g_wifi_tcp_pending = false;
+uint32_t g_wifi_connect_started = 0;
 
 
 bool switch_on(lv_event_t* e) { return lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED); }
@@ -291,7 +291,7 @@ void on_wifi_connect(lv_event_t*) {
     return;
   }
   g_wifi_connect_pending = true;
-  g_wifi_tcp_pending = false;
+  g_wifi_connect_started = platform::millis();
   if (g_wifi_status != nullptr) set_text(g_wifi_status, "Đang kết nối Wi-Fi...");
 }
 
@@ -522,11 +522,11 @@ void SettingsPage::update(uint32_t now_ms) {
       char status[48];
       snprintf(status, sizeof(status), "Wi-Fi đã kết nối · IP ESP32: %s", platform::wifi_ip_address());
       set_text(g_wifi_status, status);
-    } else if (g_wifi_connect_pending && WiFi.status() == WL_CONNECT_FAILED) {
-      g_wifi_connect_pending = false;
-      set_text(g_wifi_status, "Kết nối Wi-Fi thất bại.");
     }
-    if (!g_wifi_connect_pending) {
+    if (g_wifi_connect_pending && platform::millis() - g_wifi_connect_started > 15000) {
+      g_wifi_connect_pending = false;
+      set_text(g_wifi_status, "Kết nối Wi-Fi quá thời gian.");
+    } else if (!g_wifi_connect_pending) {
       set_text(g_wifi_status, platform::wifi_obd_connected() ? "TCP ELM327 đã kết nối" :
           (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi"));
     }
