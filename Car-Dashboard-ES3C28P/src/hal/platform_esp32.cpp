@@ -42,8 +42,10 @@ void ble_scan_complete(BLEScanResults results) {
     const String address = device.getAddress().toString();
     const String name = device.haveName() ? device.getName() : String();
     snprintf(found[i].address, sizeof(found[i].address), "%s", address.c_str());
+    // Use the MAC address as the visible name for unnamed peripherals so
+    // users can distinguish multiple adapters without advertised names.
     snprintf(found[i].name, sizeof(found[i].name), "%s",
-             name.length() == 0 ? "BLE Device" : name.c_str());
+             name.length() == 0 ? address.c_str() : name.c_str());
     found[i].rssi = static_cast<int16_t>(device.getRSSI());
   }
 
