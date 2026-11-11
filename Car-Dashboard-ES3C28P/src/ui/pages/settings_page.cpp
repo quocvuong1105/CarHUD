@@ -2,8 +2,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <src/widgets/textarea/lv_textarea.h>
-#include <src/widgets/keyboard/lv_keyboard.h>
 
 #include "../../config/app_config.h"
 #include "../../core/i18n.h"
