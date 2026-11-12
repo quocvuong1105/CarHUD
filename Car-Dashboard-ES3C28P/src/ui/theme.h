@@ -67,6 +67,13 @@ inline const lv_font_t* caption() {
   font.fallback = &ui_font_12_vi;
   return &font;
 }  ///< units, captions
+// Keyboard keeps the original Barlow glyphs and falls back to LVGL Montserrat
+// only for control symbols missing from Barlow. No existing font is modified.
+inline const lv_font_t* keyboard() {
+  static lv_font_t font = ui_font_14;
+  font.fallback = &lv_font_montserrat_14;
+  return &font;
+}
 inline const lv_font_t* body() {
   static lv_font_t font = ui_font_14;
   font.fallback = &ui_font_14_vi;
