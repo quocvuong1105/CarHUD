@@ -253,10 +253,9 @@ void wifi_input_focused(lv_event_t* e) {
   const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
   if (g_wifi_keyboard != nullptr) lv_obj_delete(g_wifi_keyboard);
   g_wifi_keyboard = lv_keyboard_create(lv_layer_top());
-  // The default LVGL keyboard uses LV_SYMBOL_* glyphs. The CarHUD Barlow
-  // text face intentionally omits those symbols, so render keyboard keys
-  // with the built-in Montserrat face which includes LVGL control symbols.
-  lv_obj_set_style_text_font(g_wifi_keyboard, &lv_font_montserrat_14, LV_PART_ITEMS);
+  // Keep Barlow for all existing glyphs; only missing keyboard control symbols
+  // are resolved by the Montserrat fallback configured in font::keyboard().
+  lv_obj_set_style_text_font(g_wifi_keyboard, font::keyboard(), LV_PART_ITEMS);
   lv_obj_set_width(g_wifi_keyboard, lv_pct(100));
   lv_obj_align(g_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_keyboard_set_textarea(g_wifi_keyboard, ta);
