@@ -49,9 +49,10 @@ const char* const kObdSources[] = {"Demo", "Bluetooth", "Wi-Fi", "USB", nullptr}
 SettingsPage* g_self = nullptr;
 uint8_t g_built_obd_source = 0xFF;
 lv_obj_t* g_ble_scan_status = nullptr;
+lv_obj_t* g_ble_status_label = nullptr;
 bool g_ble_scan_pending = false;
 bool g_ble_rebuilding_after_scan = false;
-lv_obj_t* g_ble_connection_status = nullptr;
+
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
@@ -212,11 +213,14 @@ void on_ble_device(lv_event_t* e) {
   g_ble_scan_pending = false;
   const bool connected = platform::ble_connect(address);
   if (g_ble_connection_status != nullptr) {
-    char status[72];
-    snprintf(status, sizeof(status), "%s %.17s",
-             connected ? "Đã kết nối BLE GATT:" : "Không kết nối được:",
-             address);
-    set_text(g_ble_connection_status, status);
+    set_text(g_ble_connection_status, connected
+        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
+        : "Kết nối BLE thất bại");
+  }
+  if (g_ble_connection_status == nullptr && g_ble_status_label != nullptr) {
+    set_text(g_ble_status_label, connected
+        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
+        : "Kết nối BLE thất bại");
   }
   platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
 }
@@ -506,7 +510,7 @@ void SettingsPage::close_section() {
   ambient_label_ = night_row_ = day_title_ = brightness_value_ = night_value_ = nullptr;
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
   g_ble_scan_status = nullptr;
-  g_ble_connection_status = nullptr;
+  g_ble_status_label = nullptr;
   g_wifi_status = nullptr;
   g_wifi_ip_label = nullptr;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
@@ -549,8 +553,8 @@ void SettingsPage::update(uint32_t now_ms) {
           (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi"));
     }
   }
-  if (section_ == Section::Connection && g_ble_connection_status != nullptr && get().obd_source == 1) {
-    set_text(g_ble_connection_status, platform::ble_connected()
+  if (section_ == Section::Connection && g_ble_status_label != nullptr && get().obd_source == 1) {
+    set_text(g_ble_status_label, platform::ble_connected()
         ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
         : (platform::ble_scan_active() ? "Đang quét thiết bị BLE..." : "Chưa kết nối thiết bị BLE"));
   }
@@ -566,9 +570,16 @@ void SettingsPage::update_live_values(uint32_t now_ms) {
     set_text(ambient_label_, buf);
   }
   if (link_status_ != nullptr) {
-    const core::LinkState state = core::vehicle().link_state;
-    set_text(link_status_, link_state_text(state));
-    set_text_color(link_status_, state == core::LinkState::Connected ? color::ok() : color::text_dim());
+    if (section_ == Section::Connection && get().obd_source == 1) {
+      const bool connected = platform::ble_connected();
+      set_text(link_status_, connected ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" :
+          (platform::ble_scan_active() ? "Đang quét thiết bị BLE..." : "Chưa kết nối thiết bị BLE"));
+      set_text_color(link_status_, connected ? color::ok() : color::text_dim());
+    } else {
+      const core::LinkState state = core::vehicle().link_state;
+      set_text(link_status_, link_state_text(state));
+      set_text_color(link_status_, state == core::LinkState::Connected ? color::ok() : color::text_dim());
+    }
   }
   if (memory_label_ != nullptr) {
     platform::SystemInfo info;
@@ -729,8 +740,6 @@ void SettingsPage::build_connection(lv_obj_t* list) {
           lv_obj_add_event_cb(lv_obj_get_parent(value), free_ble_address, LV_EVENT_DELETE, address);
         }
       }
-      g_ble_connection_status = rows::info(list, ICON_LINK, "Kết nối BLE",
-          platform::ble_connected() ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" : "Chưa kết nối thiết bị BLE");
       break;
     }
     case 2: {
@@ -764,7 +773,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
                      (s.ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị")) :
       "Chưa nhận dữ liệu OBD-II";
   link_status_ = rows::info(list, ICON_LINK, "Trạng thái", connection_status);
-  // BLE GATT status is shown separately in the Bluetooth section.
+  if (source == 1) g_ble_status_label = link_status_;
 }
 
 void SettingsPage::build_system(lv_obj_t* list) {
