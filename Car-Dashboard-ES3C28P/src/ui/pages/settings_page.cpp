@@ -212,10 +212,10 @@ void on_ble_device(lv_event_t* e) {
   platform::ble_scan_stop();
   g_ble_scan_pending = false;
   const bool connected = platform::ble_connect(address);
-  if (g_ble_connection_status == nullptr && g_ble_status_label != nullptr) {
+  if (g_ble_status_label != nullptr) {
     set_text(g_ble_status_label, connected
-        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
-        : "Kết nối BLE thất bại");
+        ? "Đang kết nối BLE..."
+        : "Không thể bắt đầu kết nối BLE");
   }
   platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
 }
