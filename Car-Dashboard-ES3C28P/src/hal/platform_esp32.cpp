@@ -144,6 +144,16 @@ bool ble_connected() {
   return g_ble_connected;
 }
 
+void ble_scan_stop() {
+  if (!g_ble_initialized || !g_ble_scan_active) return;
+  BLEScan* scanner = BLEDevice::getScan();
+  if (scanner != nullptr) scanner->stop();
+  portENTER_CRITICAL(&g_ble_mux);
+  g_ble_scan_active = false;
+  g_ble_scan_completed = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+}
+
 bool ble_scan_active() { return g_ble_scan_active; }
 
 bool ble_scan_completed() { return g_ble_scan_completed; }
