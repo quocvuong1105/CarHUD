@@ -50,6 +50,8 @@ SettingsPage* g_self = nullptr;
 uint8_t g_built_obd_source = 0xFF;
 lv_obj_t* g_ble_scan_status = nullptr;
 bool g_ble_scan_pending = false;
+bool g_ble_rebuilding_after_scan = false;
+lv_obj_t* g_ble_connection_status = nullptr;
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
@@ -206,12 +208,16 @@ void free_ble_address(lv_event_t* e) {
 void on_ble_device(lv_event_t* e) {
   const char* address = static_cast<const char*>(lv_event_get_user_data(e));
   if (address == nullptr || address[0] == 0) return;
-  // Selecting a scan result now attempts a real BLE GATT connection.
-  // Keep the selected address even when the adapter is currently unavailable.
-  snprintf(edit().ble_address, sizeof(edit().ble_address), "%s", address);
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
   const bool connected = platform::ble_connect(address);
-  commit(chg::kChangeConnection);
-  lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  if (g_ble_connection_status != nullptr) {
+    char status[72];
+    snprintf(status, sizeof(status), "%s %.17s",
+             connected ? "Đã kết nối BLE GATT:" : "Không kết nối được:",
+             address);
+    set_text(g_ble_connection_status, status);
+  }
   platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
 }
 
@@ -491,6 +497,8 @@ void SettingsPage::open(Section section) {
 }
 
 void SettingsPage::close_section() {
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
   if (detail_ != nullptr) {
     lv_obj_delete(detail_);
     detail_ = nullptr;
@@ -498,6 +506,7 @@ void SettingsPage::close_section() {
   ambient_label_ = night_row_ = day_title_ = brightness_value_ = night_value_ = nullptr;
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
   g_ble_scan_status = nullptr;
+  g_ble_connection_status = nullptr;
   g_wifi_status = nullptr;
   g_wifi_ip_label = nullptr;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
@@ -506,6 +515,8 @@ void SettingsPage::close_section() {
 
 bool SettingsPage::on_back() {
   if (detail_ == nullptr) return false;
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
   close_section();
   set_visible(master_, true);
   refresh_summaries();
@@ -519,6 +530,7 @@ void SettingsPage::update(uint32_t now_ms) {
   if (section_ == Section::Connection && g_ble_scan_pending &&
       platform::ble_scan_completed() && !platform::ble_scan_active()) {
     g_ble_scan_pending = false;
+    g_ble_rebuilding_after_scan = true;
     lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
   }
   if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_status != nullptr) {
@@ -694,17 +706,18 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       break;
     case 1: {
       rows::section(list, "Bluetooth");
-      rows::info(list, ICON_DATABASE, "Thiết bị đã chọn", s.ble_address[0] ? s.ble_address : "Chưa chọn");
-      rows::action(list, ICON_FLASH, "Quét thiết bị Bluetooth", color::text(), on_ble_scan, nullptr);
-
+      if (!g_ble_rebuilding_after_scan && !platform::ble_scan_active()) {
+        if (platform::ble_scan_start()) g_ble_scan_pending = true;
+      }
+      g_ble_rebuilding_after_scan = false;
       const uint8_t count = platform::ble_scan_count();
       if (count == 0) {
         g_ble_scan_status = rows::note(
             list, platform::ble_scan_active() ? "Đang quét thiết bị BLE..." :
                   (platform::ble_scan_completed() ? "Không tìm thấy thiết bị BLE." :
-                   "Nhấn Quét thiết bị Bluetooth để tìm thiết bị ở gần."));
+                   "Đang chuẩn bị quét thiết bị BLE..."));
       } else {
-        g_ble_scan_status = rows::note(list, "Chọn thiết bị BLE để lưu làm adapter OBD-II:");
+        g_ble_scan_status = rows::note(list, "Chạm vào thiết bị để kết nối BLE:");
         for (uint8_t i = 0; i < count; ++i) {
           platform::BleDeviceInfo device{};
           if (!platform::ble_scan_get(i, device)) continue;
@@ -749,6 +762,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
                      (s.ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị")) :
       "Chưa nhận dữ liệu OBD-II";
   link_status_ = rows::info(list, ICON_LINK, "Trạng thái", connection_status);
+  if (source == 1) g_ble_connection_status = link_status_;
 }
 
 void SettingsPage::build_system(lv_obj_t* list) {
