@@ -212,11 +212,6 @@ void on_ble_device(lv_event_t* e) {
   platform::ble_scan_stop();
   g_ble_scan_pending = false;
   const bool connected = platform::ble_connect(address);
-  if (g_ble_connection_status != nullptr) {
-    set_text(g_ble_connection_status, connected
-        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
-        : "Kết nối BLE thất bại");
-  }
   if (g_ble_connection_status == nullptr && g_ble_status_label != nullptr) {
     set_text(g_ble_status_label, connected
         ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
@@ -225,14 +220,6 @@ void on_ble_device(lv_event_t* e) {
   platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
 }
 
-void on_ble_scan(lv_event_t*) {
-  if (platform::ble_scan_start()) {
-    g_ble_scan_pending = true;
-    if (g_ble_scan_status != nullptr) set_text(g_ble_scan_status, "Đang quét thiết bị BLE...");
-  } else if (g_ble_scan_status != nullptr) {
-    set_text(g_ble_scan_status, "Không thể bắt đầu quét BLE.");
-  }
-}
 
 enum WifiField : intptr_t { kWifiSsid = 1, kWifiPassword, kWifiHost, kWifiPort };
 
