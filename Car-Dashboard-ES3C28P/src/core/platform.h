@@ -30,6 +30,7 @@ bool ble_connect(const char* address);
 void ble_disconnect();
 bool ble_connected();
 bool ble_scan_start();
+void ble_scan_stop();
 bool ble_scan_active();
 bool ble_scan_completed();
 uint8_t ble_scan_count();
