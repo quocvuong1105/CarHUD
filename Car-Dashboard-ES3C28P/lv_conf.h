@@ -1010,7 +1010,7 @@
 #define LV_FONT_MONTSERRAT_12 0
 
 /** Montserrat 14 */
-#define LV_FONT_MONTSERRAT_14 0    /* CarCYD: custom Barlow fonts are used (src/ui/fonts) */
+#define LV_FONT_MONTSERRAT_14 1    /* Keyboard control symbols: backspace, enter, arrows */
 
 /** Montserrat 16 */
 #define LV_FONT_MONTSERRAT_16 0
