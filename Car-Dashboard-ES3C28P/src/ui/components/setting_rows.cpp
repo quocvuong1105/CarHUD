@@ -120,12 +120,13 @@ lv_obj_t* section(lv_obj_t* list, const char* text) {
 }
 
 lv_obj_t* nav(lv_obj_t* list, const char* glyph, const char* title, const char* value, lv_event_cb_t on_click,
-              void* user) {
+              void* user, const char* trailing_glyph) {
   lv_obj_t* r = base_row(list, true);
   row_icon(r, glyph);
   row_title(r, title);
   lv_obj_t* v = label(r, font::caption(), color::text_dim(), value != nullptr ? value : "");
-  icon(r, ICON_CHEVRON_RIGHT, font::title(), color::text_faint());
+  if (trailing_glyph != nullptr) icon(r, trailing_glyph, font::icon24(), color::text_dim());
+  else icon(r, ICON_CHEVRON_RIGHT, font::title(), color::text_faint());
   if (on_click != nullptr) lv_obj_add_event_cb(r, on_click, LV_EVENT_CLICKED, user);
   return v;
 }
