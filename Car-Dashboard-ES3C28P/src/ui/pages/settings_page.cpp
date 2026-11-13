@@ -54,9 +54,7 @@ bool g_ble_scan_pending = false;
 bool g_ble_rebuilding_after_scan = false;
 
 lv_obj_t* g_wifi_keyboard = nullptr;
-lv_obj_t* g_wifi_status = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
-lv_obj_t* g_wifi_ssid_label = nullptr;
 lv_obj_t* g_wifi_password_prompt = nullptr;
 bool g_wifi_scan_pending = false;
 bool g_wifi_rebuilding_after_scan = false;
@@ -299,8 +297,6 @@ void on_wifi_network(lv_event_t* e) {
   snprintf(settings.wifi_ssid, sizeof(settings.wifi_ssid), "%s", selection->ssid);
   settings.wifi_password[0] = 0;
   commit(chg::kChangeConnection);
-  if (g_wifi_ssid_label != nullptr) set_text(g_wifi_ssid_label, selection->ssid);
-
   lv_obj_t* list = lv_obj_get_parent(lv_event_get_current_target_obj(e));
   if (g_wifi_password_prompt != nullptr) {
     lv_obj_delete(g_wifi_password_prompt);
@@ -320,7 +316,6 @@ void on_wifi_network(lv_event_t* e) {
     lv_obj_t* input = wifi_textarea(g_wifi_password_prompt, caption, "", kWifiPassword, true);
     lv_obj_scroll_to_view(input, LV_ANIM_ON);
     lv_obj_send_event(input, LV_EVENT_FOCUSED, nullptr);
-    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Nhập mật khẩu rồi nhấn Enter để kết nối.");
   } else {
     platform::play(platform::Sound::Confirm);
     on_wifi_connect(nullptr);
@@ -330,37 +325,26 @@ void on_wifi_network(lv_event_t* e) {
 void on_wifi_connect(lv_event_t*) {
   const core::Settings& s = get();
   if (s.wifi_ssid[0] == 0) {
-    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Chưa nhập tên mạng Wi-Fi.");
     return;
   }
   platform::wifi_obd_disconnect();
   if (!platform::wifi_connect(s.wifi_ssid, s.wifi_password)) {
-    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Không thể bắt đầu kết nối Wi-Fi.");
     return;
   }
   g_wifi_connect_pending = true;
   g_wifi_connect_started = platform::millis();
-  if (g_wifi_status != nullptr) set_text(g_wifi_status, "Đang kết nối Wi-Fi...");
 }
 
 void on_wifi_obd_connect(lv_event_t*) {
   const core::Settings& s = get();
   if (!platform::wifi_connected()) {
-    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Hãy kết nối Wi-Fi trước.");
     return;
   }
   if (s.wifi_obd_host[0] == 0 || s.wifi_obd_port == 0) {
-    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Nhập IP và cổng TCP của ELM327.");
     return;
   }
   const bool ok = platform::wifi_obd_connect(s.wifi_obd_host, s.wifi_obd_port);
-  if (g_wifi_status != nullptr) {
-    char status[72];
-    snprintf(status, sizeof(status), "%s %s:%u",
-             ok ? "Đã mở TCP tới" : "Không kết nối được TCP tới",
-             s.wifi_obd_host, static_cast<unsigned>(s.wifi_obd_port));
-    set_text(g_wifi_status, status);
-  }
+  (void)ok;
 }
 
 void on_obd_source(lv_event_t* e) {
@@ -545,9 +529,7 @@ void SettingsPage::close_section() {
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
   g_ble_scan_status = nullptr;
   g_ble_status_label = nullptr;
-  g_wifi_status = nullptr;
   g_wifi_ip_label = nullptr;
-  g_wifi_ssid_label = nullptr;
   g_wifi_password_prompt = nullptr;
   if (g_wifi_keyboard != nullptr) {
     lv_obj_delete(g_wifi_keyboard);
@@ -584,20 +566,16 @@ void SettingsPage::update(uint32_t now_ms) {
     g_ble_rebuilding_after_scan = true;
     lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
   }
-  if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_status != nullptr) {
+  if (section_ == Section::Connection && get().obd_source == 2) {
     if (g_wifi_ip_label != nullptr) set_text(g_wifi_ip_label, platform::wifi_ip_address());
-    if (g_wifi_connect_pending && platform::wifi_connected()) {
+    if (g_wifi_connect_pending && platform::wifi_connected()) g_wifi_connect_pending = false;
+    if (g_wifi_connect_pending && platform::millis() - g_wifi_connect_started > 15000)
       g_wifi_connect_pending = false;
-      char status[48];
-      snprintf(status, sizeof(status), "Wi-Fi đã kết nối · IP ESP32: %s", platform::wifi_ip_address());
-      set_text(g_wifi_status, status);
-    }
-    if (g_wifi_connect_pending && platform::millis() - g_wifi_connect_started > 15000) {
-      g_wifi_connect_pending = false;
-      set_text(g_wifi_status, "Kết nối Wi-Fi quá thời gian.");
-    } else if (!g_wifi_connect_pending) {
-      set_text(g_wifi_status, platform::wifi_obd_connected() ? "TCP ELM327 đã kết nối" :
-          (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi"));
+    if (link_status_ != nullptr) {
+      const char* status = platform::wifi_obd_connected() ? "Đã kết nối TCP ELM327 · chưa xác nhận OBD-II" :
+          (platform::wifi_connected() ? "Wi-Fi đã kết nối · ELM327 chưa kết nối" :
+           (g_wifi_connect_pending ? "Đang kết nối Wi-Fi..." : "Chưa kết nối Wi-Fi"));
+      set_text(link_status_, status);
     }
   }
   if (section_ == Section::Connection && g_ble_status_label != nullptr && get().obd_source == 1) {
@@ -797,8 +775,6 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       } else {
         g_wifi_rebuilding_after_scan = false;
       }
-      g_wifi_ssid_label = rows::info(list, ICON_LINK, "Mạng đã chọn",
-          s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn mạng Wi-Fi");
       const uint8_t wifi_count = platform::wifi_scan_count();
       if (wifi_count == 0) {
         rows::note(list, platform::wifi_scan_active() ? "Đang tự động quét mạng Wi-Fi..." :
@@ -828,9 +804,6 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       wifi_textarea(list, "Cổng TCP của ELM327", port, kWifiPort);
       rows::note(list, "Mặc định tham khảo: 192.168.0.10 và TCP 35000. Kiểm tra thông số thực tế trên adapter.");
       rows::action(list, ICON_LINK, "Kết nối ELM327 TCP", color::accent(), on_wifi_obd_connect, nullptr);
-      g_wifi_status = rows::info(list, ICON_DATABASE, "Trạng thái Wi-Fi / ELM327",
-          platform::wifi_obd_connected() ? "TCP đã kết nối" :
-          (platform::wifi_connected() ? "Wi-Fi đã kết nối · TCP chưa kết nối" : "Chưa kết nối Wi-Fi"));
       break;
     }
     case 3:
@@ -843,7 +816,9 @@ void SettingsPage::build_connection(lv_obj_t* list) {
   const char* connection_status =
       source == 1 ? (platform::ble_connected() ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" :
                      (s.ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị")) :
-      "Chưa nhận dữ liệu OBD-II";
+      (source == 2 ? (platform::wifi_obd_connected() ? "Đã kết nối TCP ELM327 · chưa xác nhận OBD-II" :
+                      (platform::wifi_connected() ? "Wi-Fi đã kết nối · ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi")) :
+       "Chưa nhận dữ liệu OBD-II");
   link_status_ = rows::info(list, ICON_LINK, "Trạng thái", connection_status);
   if (source == 1) g_ble_status_label = link_status_;
 }
