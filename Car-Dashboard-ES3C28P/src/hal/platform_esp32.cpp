@@ -173,6 +173,38 @@ bool ble_scan_get(uint8_t index, BleDeviceInfo& out) {
   return valid;
 }
 
+bool wifi_scan_start() {
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
+  WiFi.mode(WIFI_STA);
+  WiFi.scanDelete();
+  const int result = WiFi.scanNetworks(true, true);
+  return result == WIFI_SCAN_RUNNING || result >= 0;
+}
+
+bool wifi_scan_active() {
+  return WiFi.scanComplete() == WIFI_SCAN_RUNNING;
+}
+
+bool wifi_scan_completed() {
+  return WiFi.scanComplete() != WIFI_SCAN_RUNNING;
+}
+
+uint8_t wifi_scan_count() {
+  const int count = WiFi.scanComplete();
+  if (count <= 0) return 0;
+  return static_cast<uint8_t>(count > 255 ? 255 : count);
+}
+
+bool wifi_scan_get(uint8_t index, WifiNetworkInfo& out) {
+  const int count = WiFi.scanComplete();
+  if (count < 0 || index >= count) return false;
+  const String ssid = WiFi.SSID(index);
+  snprintf(out.ssid, sizeof(out.ssid), "%s", ssid.c_str());
+  out.rssi = static_cast<int16_t>(WiFi.RSSI(index));
+  out.secured = WiFi.encryptionType(index) != WIFI_AUTH_OPEN;
+  return true;
+}
+
 bool wifi_connect(const char* ssid, const char* password) {
   if (ssid == nullptr || ssid[0] == 0) return false;
   wifi_obd_disconnect();
