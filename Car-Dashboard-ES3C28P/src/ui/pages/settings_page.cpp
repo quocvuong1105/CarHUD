@@ -309,7 +309,8 @@ void on_wifi_network(lv_event_t* e) {
     g_wifi_keyboard = nullptr;
   }
   if (selection->secured) {
-    // Modal overlay keeps the password prompt separate from the Wi-Fi list.
+    // Compact three-row password dialog:
+    // 1) Wi-Fi title, 2) password + show/hide, 3) Cancel / Connect.
     g_wifi_password_prompt = lv_obj_create(lv_layer_top());
     lv_obj_set_size(g_wifi_password_prompt, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(g_wifi_password_prompt, lv_color_black(), 0);
@@ -318,37 +319,64 @@ void on_wifi_network(lv_event_t* e) {
     lv_obj_set_style_pad_all(g_wifi_password_prompt, 0, 0);
 
     lv_obj_t* dialog = card(g_wifi_password_prompt);
-    lv_obj_set_width(dialog, lv_pct(90));
+    lv_obj_set_width(dialog, lv_pct(94));
     lv_obj_set_flex_flow(dialog, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(dialog, 8, 0);
-    lv_obj_align(dialog, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_set_style_pad_all(dialog, 8, 0);
+    lv_obj_set_style_pad_row(dialog, 6, 0);
+    lv_obj_align(dialog, LV_ALIGN_TOP_MID, 0, 6);
 
     char caption[72];
-    snprintf(caption, sizeof(caption), "Kết nối Wi-Fi: %s", selection->ssid);
+    snprintf(caption, sizeof(caption), "Kết nối WIFI: %s", selection->ssid);
     label(dialog, font::title(), color::text(), caption);
-    // Keep the action above the on-screen keyboard so it remains reachable.
-    button(dialog, ICON_LINK, "Kết nối", ButtonStyle::Primary,
-           [](lv_event_t*) {
-             if (g_wifi_password_input != nullptr) {
-               snprintf(edit().wifi_password, sizeof(edit().wifi_password), "%s",
-                        lv_textarea_get_text(g_wifi_password_input));
-               commit(chg::kChangeConnection);
-             }
-             on_wifi_connect(nullptr);
-           }, nullptr);
-    button(dialog, nullptr, "Hủy", ButtonStyle::Secondary,
-           [](lv_event_t*) {
-             if (g_wifi_keyboard != nullptr) {
-               lv_obj_delete(g_wifi_keyboard);
-               g_wifi_keyboard = nullptr;
-             }
-             if (g_wifi_password_prompt != nullptr) {
-               lv_obj_delete(g_wifi_password_prompt);
-               g_wifi_password_prompt = nullptr;
-               g_wifi_password_input = nullptr;
-             }
-           }, nullptr);
-    g_wifi_password_input = wifi_textarea(dialog, "Mật khẩu", "", kWifiPassword, true);
+
+    lv_obj_t* password_row = row(dialog, 6);
+    lv_obj_set_width(password_row, lv_pct(100));
+    lv_obj_set_flex_align(password_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    label(password_row, font::body(), color::text(), "Mật khẩu:");
+    g_wifi_password_input = lv_textarea_create(password_row);
+    lv_obj_set_height(g_wifi_password_input, 38);
+    lv_obj_set_flex_grow(g_wifi_password_input, 1);
+    lv_textarea_set_one_line(g_wifi_password_input, true);
+    lv_textarea_set_password_mode(g_wifi_password_input, true);
+    lv_textarea_set_text(g_wifi_password_input, "");
+    lv_obj_add_event_cb(g_wifi_password_input, wifi_input_focused, LV_EVENT_FOCUSED,
+                        reinterpret_cast<void*>(kWifiPassword));
+
+    lv_obj_t* visibility_button = button(password_row, nullptr, "Hiện", ButtonStyle::Ghost,
+        [](lv_event_t* event) {
+          lv_obj_t* toggle = lv_event_get_current_target_obj(event);
+          const bool show = lv_textarea_get_password_mode(g_wifi_password_input);
+          lv_textarea_set_password_mode(g_wifi_password_input, !show);
+          lv_obj_t* text = lv_obj_get_child(toggle, 0);
+          if (text != nullptr) lv_label_set_text(text, show ? "Ẩn" : "Hiện");
+        }, nullptr);
+
+    lv_obj_t* actions = row(dialog, 8);
+    lv_obj_set_width(actions, lv_pct(100));
+    lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* cancel_button = button(actions, nullptr, "Hủy", ButtonStyle::Secondary,
+        [](lv_event_t*) {
+          if (g_wifi_keyboard != nullptr) {
+            lv_obj_delete(g_wifi_keyboard);
+            g_wifi_keyboard = nullptr;
+          }
+          if (g_wifi_password_prompt != nullptr) {
+            lv_obj_delete(g_wifi_password_prompt);
+            g_wifi_password_prompt = nullptr;
+            g_wifi_password_input = nullptr;
+          }
+        }, nullptr);
+    lv_obj_t* connect_button = button(actions, nullptr, "Kết nối", ButtonStyle::Primary,
+        [](lv_event_t*) {
+          if (g_wifi_password_input != nullptr) {
+            snprintf(edit().wifi_password, sizeof(edit().wifi_password), "%s",
+                     lv_textarea_get_text(g_wifi_password_input));
+            commit(chg::kChangeConnection);
+          }
+          on_wifi_connect(nullptr);
+        }, nullptr);
+    lv_obj_set_flex_grow(cancel_button, 1);
+    lv_obj_set_flex_grow(connect_button, 1);
     lv_obj_send_event(g_wifi_password_input, LV_EVENT_FOCUSED, nullptr);
   } else {
     platform::play(platform::Sound::Confirm);
