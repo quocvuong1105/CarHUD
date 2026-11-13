@@ -18,7 +18,7 @@ lv_obj_t* section(lv_obj_t* list, const char* text);
 
 /** Row with icon, title, value and chevron; returns the value label. */
 lv_obj_t* nav(lv_obj_t* list, const char* glyph, const char* title, const char* value, lv_event_cb_t on_click,
-              void* user);
+              void* user, const char* trailing_glyph = nullptr);
 
 /** Read-only row; returns the value label. */
 lv_obj_t* info(lv_obj_t* list, const char* glyph, const char* title, const char* value);
