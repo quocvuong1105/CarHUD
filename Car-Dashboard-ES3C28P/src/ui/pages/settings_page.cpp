@@ -56,6 +56,9 @@ bool g_ble_rebuilding_after_scan = false;
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
+lv_obj_t* g_wifi_ssid_label = nullptr;
+bool g_wifi_scan_pending = false;
+bool g_wifi_rebuilding_after_scan = false;
 bool g_wifi_connect_pending = false;
 uint32_t g_wifi_connect_started = 0;
 
@@ -280,6 +283,19 @@ lv_obj_t* wifi_textarea(lv_obj_t* list, const char* caption, const char* value, 
   return ta;
 }
 
+void free_wifi_ssid(lv_event_t* e) {
+  delete[] static_cast<char*>(lv_event_get_user_data(e));
+}
+
+void on_wifi_network(lv_event_t* e) {
+  const char* ssid = static_cast<const char*>(lv_event_get_user_data(e));
+  if (ssid == nullptr || ssid[0] == 0) return;
+  snprintf(edit().wifi_ssid, sizeof(edit().wifi_ssid), "%s", ssid);
+  commit(chg::kChangeConnection);
+  if (g_wifi_ssid_label != nullptr) set_text(g_wifi_ssid_label, ssid);
+  platform::play(platform::Sound::Confirm);
+}
+
 void on_wifi_connect(lv_event_t*) {
   const core::Settings& s = get();
   if (s.wifi_ssid[0] == 0) {
@@ -500,6 +516,8 @@ void SettingsPage::close_section() {
   g_ble_status_label = nullptr;
   g_wifi_status = nullptr;
   g_wifi_ip_label = nullptr;
+  g_wifi_ssid_label = nullptr;
+  g_wifi_scan_pending = false;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
 }
@@ -518,6 +536,12 @@ bool SettingsPage::on_back() {
 
 void SettingsPage::update(uint32_t now_ms) {
   if (detail_ == nullptr) return;
+  if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_scan_pending &&
+      platform::wifi_scan_completed() && !platform::wifi_scan_active()) {
+    g_wifi_scan_pending = false;
+    g_wifi_rebuilding_after_scan = true;
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
   if (section_ == Section::Connection && g_ble_scan_pending &&
       platform::ble_scan_completed() && !platform::ble_scan_active()) {
     g_ble_scan_pending = false;
@@ -730,8 +754,33 @@ void SettingsPage::build_connection(lv_obj_t* list) {
       break;
     }
     case 2: {
-      rows::section(list, "Mạng Wi-Fi của ESP32");
-      wifi_textarea(list, "Tên mạng (SSID)", s.wifi_ssid, kWifiSsid);
+      rows::section(list, "Chọn mạng Wi-Fi");
+      if (!g_wifi_rebuilding_after_scan) {
+        g_wifi_scan_pending = platform::wifi_scan_start();
+      } else {
+        g_wifi_rebuilding_after_scan = false;
+      }
+      g_wifi_ssid_label = rows::info(list, ICON_WIFI, "Mạng đã chọn",
+          s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn mạng Wi-Fi");
+      const uint8_t wifi_count = platform::wifi_scan_count();
+      if (wifi_count == 0) {
+        rows::note(list, platform::wifi_scan_active() ? "Đang tự động quét mạng Wi-Fi..." :
+            (platform::wifi_scan_completed() ? "Không tìm thấy mạng Wi-Fi." :
+             "Đang khởi tạo quét Wi-Fi..."));
+      } else {
+        rows::note(list, "Chạm vào mạng Wi-Fi để chọn:");
+        for (uint8_t i = 0; i < wifi_count; ++i) {
+          platform::WifiNetworkInfo network{};
+          if (!platform::wifi_scan_get(i, network) || network.ssid[0] == 0) continue;
+          char detail[40];
+          snprintf(detail, sizeof(detail), "%d dBm · %s", static_cast<int>(network.rssi),
+                   network.secured ? "Có mật khẩu" : "Không mật khẩu");
+          char* ssid = new char[sizeof(network.ssid)];
+          snprintf(ssid, sizeof(network.ssid), "%s", network.ssid);
+          lv_obj_t* item = rows::nav(list, ICON_WIFI, network.ssid, detail, on_wifi_network, ssid);
+          lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_ssid, LV_EVENT_DELETE, ssid);
+        }
+      }
       wifi_textarea(list, "Mật khẩu Wi-Fi", s.wifi_password, kWifiPassword, true);
       rows::action(list, ICON_LINK, "Kết nối Wi-Fi", color::accent(), on_wifi_connect, nullptr);
       g_wifi_ip_label = rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
