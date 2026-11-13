@@ -56,6 +56,7 @@ bool g_ble_rebuilding_after_scan = false;
 lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
 lv_obj_t* g_wifi_password_prompt = nullptr;
+lv_obj_t* g_wifi_password_input = nullptr;
 bool g_wifi_scan_pending = false;
 bool g_wifi_rebuilding_after_scan = false;
 bool g_wifi_connect_pending = false;
@@ -301,21 +302,54 @@ void on_wifi_network(lv_event_t* e) {
   if (g_wifi_password_prompt != nullptr) {
     lv_obj_delete(g_wifi_password_prompt);
     g_wifi_password_prompt = nullptr;
+    g_wifi_password_input = nullptr;
   }
   if (g_wifi_keyboard != nullptr) {
     lv_obj_delete(g_wifi_keyboard);
     g_wifi_keyboard = nullptr;
   }
   if (selection->secured) {
-    g_wifi_password_prompt = box(list);
-    lv_obj_set_width(g_wifi_password_prompt, lv_pct(100));
-    lv_obj_set_flex_flow(g_wifi_password_prompt, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(g_wifi_password_prompt, 4, 0);
+    // Modal overlay keeps the password prompt separate from the Wi-Fi list.
+    g_wifi_password_prompt = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(g_wifi_password_prompt, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(g_wifi_password_prompt, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_wifi_password_prompt, LV_OPA_50, 0);
+    lv_obj_set_style_border_width(g_wifi_password_prompt, 0, 0);
+    lv_obj_set_style_pad_all(g_wifi_password_prompt, 0, 0);
+
+    lv_obj_t* dialog = card(g_wifi_password_prompt);
+    lv_obj_set_width(dialog, lv_pct(90));
+    lv_obj_set_flex_flow(dialog, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(dialog, 8, 0);
+    lv_obj_align(dialog, LV_ALIGN_TOP_MID, 0, 12);
+
     char caption[72];
-    snprintf(caption, sizeof(caption), "Mật khẩu cho %s", selection->ssid);
-    lv_obj_t* input = wifi_textarea(g_wifi_password_prompt, caption, "", kWifiPassword, true);
-    lv_obj_scroll_to_view(input, LV_ANIM_ON);
-    lv_obj_send_event(input, LV_EVENT_FOCUSED, nullptr);
+    snprintf(caption, sizeof(caption), "Kết nối Wi-Fi: %s", selection->ssid);
+    label(dialog, font::title(), color::text(), caption);
+    // Keep the action above the on-screen keyboard so it remains reachable.
+    button(dialog, ICON_LINK, "Kết nối", ButtonStyle::Primary,
+           [](lv_event_t*) {
+             if (g_wifi_password_input != nullptr) {
+               snprintf(edit().wifi_password, sizeof(edit().wifi_password), "%s",
+                        lv_textarea_get_text(g_wifi_password_input));
+               commit(chg::kChangeConnection);
+             }
+             on_wifi_connect(nullptr);
+           }, nullptr);
+    button(dialog, nullptr, "Hủy", ButtonStyle::Secondary,
+           [](lv_event_t*) {
+             if (g_wifi_keyboard != nullptr) {
+               lv_obj_delete(g_wifi_keyboard);
+               g_wifi_keyboard = nullptr;
+             }
+             if (g_wifi_password_prompt != nullptr) {
+               lv_obj_delete(g_wifi_password_prompt);
+               g_wifi_password_prompt = nullptr;
+               g_wifi_password_input = nullptr;
+             }
+           }, nullptr);
+    g_wifi_password_input = wifi_textarea(dialog, "Mật khẩu", "", kWifiPassword, true);
+    lv_obj_send_event(g_wifi_password_input, LV_EVENT_FOCUSED, nullptr);
   } else {
     platform::play(platform::Sound::Confirm);
     on_wifi_connect(nullptr);
@@ -326,6 +360,15 @@ void on_wifi_connect(lv_event_t*) {
   const core::Settings& s = get();
   if (s.wifi_ssid[0] == 0) {
     return;
+  }
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
+  if (g_wifi_password_prompt != nullptr) {
+    lv_obj_delete(g_wifi_password_prompt);
+    g_wifi_password_prompt = nullptr;
+    g_wifi_password_input = nullptr;
   }
   platform::wifi_obd_disconnect();
   if (!platform::wifi_connect(s.wifi_ssid, s.wifi_password)) {
@@ -531,6 +574,7 @@ void SettingsPage::close_section() {
   g_ble_status_label = nullptr;
   g_wifi_ip_label = nullptr;
   g_wifi_password_prompt = nullptr;
+  g_wifi_password_input = nullptr;
   if (g_wifi_keyboard != nullptr) {
     lv_obj_delete(g_wifi_keyboard);
     g_wifi_keyboard = nullptr;
