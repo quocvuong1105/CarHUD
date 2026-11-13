@@ -57,6 +57,7 @@ lv_obj_t* g_wifi_keyboard = nullptr;
 lv_obj_t* g_wifi_status = nullptr;
 lv_obj_t* g_wifi_ip_label = nullptr;
 lv_obj_t* g_wifi_ssid_label = nullptr;
+lv_obj_t* g_wifi_password_prompt = nullptr;
 bool g_wifi_scan_pending = false;
 bool g_wifi_rebuilding_after_scan = false;
 bool g_wifi_connect_pending = false;
@@ -226,6 +227,9 @@ void on_ble_device(lv_event_t* e) {
 
 enum WifiField : intptr_t { kWifiSsid = 1, kWifiPassword, kWifiHost, kWifiPort };
 
+struct WifiNetworkSelection { char ssid[33]; bool secured; };
+void on_wifi_connect(lv_event_t* e);
+
 void wifi_keyboard_event(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_READY) return;
   lv_obj_t* keyboard = lv_event_get_current_target_obj(e);
@@ -246,6 +250,7 @@ void wifi_keyboard_event(lv_event_t* e) {
   commit(chg::kChangeConnection);
   g_wifi_keyboard = nullptr;
   lv_obj_delete_async(keyboard);
+  if (field == kWifiPassword) on_wifi_connect(nullptr);
 }
 
 void wifi_input_focused(lv_event_t* e) {
@@ -283,17 +288,43 @@ lv_obj_t* wifi_textarea(lv_obj_t* list, const char* caption, const char* value, 
   return ta;
 }
 
-void free_wifi_ssid(lv_event_t* e) {
-  delete[] static_cast<char*>(lv_event_get_user_data(e));
+void free_wifi_selection(lv_event_t* e) {
+  delete static_cast<WifiNetworkSelection*>(lv_event_get_user_data(e));
 }
 
 void on_wifi_network(lv_event_t* e) {
-  const char* ssid = static_cast<const char*>(lv_event_get_user_data(e));
-  if (ssid == nullptr || ssid[0] == 0) return;
-  snprintf(edit().wifi_ssid, sizeof(edit().wifi_ssid), "%s", ssid);
+  auto* selection = static_cast<WifiNetworkSelection*>(lv_event_get_user_data(e));
+  if (selection == nullptr || selection->ssid[0] == 0) return;
+  core::Settings& settings = edit();
+  snprintf(settings.wifi_ssid, sizeof(settings.wifi_ssid), "%s", selection->ssid);
+  settings.wifi_password[0] = 0;
   commit(chg::kChangeConnection);
-  if (g_wifi_ssid_label != nullptr) set_text(g_wifi_ssid_label, ssid);
-  platform::play(platform::Sound::Confirm);
+  if (g_wifi_ssid_label != nullptr) set_text(g_wifi_ssid_label, selection->ssid);
+
+  lv_obj_t* list = lv_obj_get_parent(lv_event_get_current_target_obj(e));
+  if (g_wifi_password_prompt != nullptr) {
+    lv_obj_delete(g_wifi_password_prompt);
+    g_wifi_password_prompt = nullptr;
+  }
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
+  if (selection->secured) {
+    g_wifi_password_prompt = box(list);
+    lv_obj_set_width(g_wifi_password_prompt, lv_pct(100));
+    lv_obj_set_flex_flow(g_wifi_password_prompt, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(g_wifi_password_prompt, 4, 0);
+    char caption[72];
+    snprintf(caption, sizeof(caption), "Mật khẩu cho %s", selection->ssid);
+    lv_obj_t* input = wifi_textarea(g_wifi_password_prompt, caption, "", kWifiPassword, true);
+    lv_obj_scroll_to_view(input, LV_ANIM_ON);
+    lv_obj_send_event(input, LV_EVENT_FOCUSED, nullptr);
+    if (g_wifi_status != nullptr) set_text(g_wifi_status, "Nhập mật khẩu rồi nhấn Enter để kết nối.");
+  } else {
+    platform::play(platform::Sound::Confirm);
+    on_wifi_connect(nullptr);
+  }
 }
 
 void on_wifi_connect(lv_event_t*) {
@@ -517,6 +548,11 @@ void SettingsPage::close_section() {
   g_wifi_status = nullptr;
   g_wifi_ip_label = nullptr;
   g_wifi_ssid_label = nullptr;
+  g_wifi_password_prompt = nullptr;
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
   g_wifi_scan_pending = false;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
@@ -776,13 +812,14 @@ void SettingsPage::build_connection(lv_obj_t* list) {
           char detail[40];
           snprintf(detail, sizeof(detail), "%d dBm · %s", static_cast<int>(network.rssi),
                    network.secured ? "Có mật khẩu" : "Không mật khẩu");
-          char* ssid = new char[sizeof(network.ssid)];
-          snprintf(ssid, sizeof(network.ssid), "%s", network.ssid);
-          lv_obj_t* item = rows::nav(list, ICON_LINK, network.ssid, detail, on_wifi_network, ssid);
-          lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_ssid, LV_EVENT_DELETE, ssid);
+          auto* selection = new WifiNetworkSelection{};
+          snprintf(selection->ssid, sizeof(selection->ssid), "%s", network.ssid);
+          selection->secured = network.secured;
+          lv_obj_t* item = rows::nav(list, ICON_LINK, network.ssid, detail, on_wifi_network, selection,
+                                     network.secured ? ICON_LOCK : nullptr);
+          lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_selection, LV_EVENT_DELETE, selection);
         }
       }
-      wifi_textarea(list, "Mật khẩu Wi-Fi", s.wifi_password, kWifiPassword, true);
       rows::action(list, ICON_LINK, "Kết nối Wi-Fi", color::accent(), on_wifi_connect, nullptr);
       g_wifi_ip_label = rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
 
