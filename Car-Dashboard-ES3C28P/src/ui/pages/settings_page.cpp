@@ -809,9 +809,8 @@ void SettingsPage::build_connection(lv_obj_t* list) {
         for (uint8_t i = 0; i < wifi_count; ++i) {
           platform::WifiNetworkInfo network{};
           if (!platform::wifi_scan_get(i, network) || network.ssid[0] == 0) continue;
-          char detail[40];
-          snprintf(detail, sizeof(detail), "%d dBm · %s", static_cast<int>(network.rssi),
-                   network.secured ? "Có mật khẩu" : "Không mật khẩu");
+          char detail[24];
+          snprintf(detail, sizeof(detail), "%d dBm", static_cast<int>(network.rssi));
           auto* selection = new WifiNetworkSelection{};
           snprintf(selection->ssid, sizeof(selection->ssid), "%s", network.ssid);
           selection->secured = network.secured;
@@ -820,7 +819,6 @@ void SettingsPage::build_connection(lv_obj_t* list) {
           lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_selection, LV_EVENT_DELETE, selection);
         }
       }
-      rows::action(list, ICON_LINK, "Kết nối Wi-Fi", color::accent(), on_wifi_connect, nullptr);
       g_wifi_ip_label = rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
 
       rows::section(list, "Thiết bị ELM327 Wi-Fi");
