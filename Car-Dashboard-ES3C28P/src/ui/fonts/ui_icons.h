@@ -75,3 +75,4 @@
 #define ICON_CHIP             "\xEE\x80\xBF"  /* U+E03F mdi-chip */
 #define ICON_MEMORY           "\xEE\x81\x80"  /* U+E040 mdi-memory */
 #define ICON_DATABASE         "\xEE\x81\x81"  /* U+E041 mdi-database */
+#define ICON_LOCK             "\xEE\x81\x82"  /* U+E042 mdi-lock */
