@@ -1,6 +1,7 @@
 #include "settings_page.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "../../config/app_config.h"
 #include "../../core/i18n.h"
@@ -43,9 +44,24 @@ const char* const kTempUnits[] = {"°C", "°F", nullptr};
 const char* const kPressureUnits[] = {"kPa", "bar", "psi", nullptr};
 const char* const kRpmRanges[] = {"5000", "6000", "7000", "8000", "9000", nullptr};
 const char* const kLanguages[] = {"English", "Türkçe", "Tiếng Việt", nullptr};
-const char* g_sources[3] = {};  // translated at build time
+const char* const kObdSources[] = {"Demo", "Bluetooth", "Wi-Fi", "USB", nullptr};
 
 SettingsPage* g_self = nullptr;
+uint8_t g_built_obd_source = 0xFF;
+lv_obj_t* g_ble_scan_status = nullptr;
+lv_obj_t* g_ble_status_label = nullptr;
+bool g_ble_scan_pending = false;
+bool g_ble_rebuilding_after_scan = false;
+
+lv_obj_t* g_wifi_keyboard = nullptr;
+lv_obj_t* g_wifi_ip_label = nullptr;
+lv_obj_t* g_wifi_password_prompt = nullptr;
+lv_obj_t* g_wifi_password_input = nullptr;
+bool g_wifi_scan_pending = false;
+bool g_wifi_rebuilding_after_scan = false;
+bool g_wifi_connect_pending = false;
+uint32_t g_wifi_connect_started = 0;
+
 
 bool switch_on(lv_event_t* e) { return lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED); }
 int32_t slider_value(lv_event_t* e) { return lv_slider_get_value(lv_event_get_target_obj(e)); }
@@ -187,9 +203,228 @@ void on_status_led(lv_event_t* e) {
   edit().status_led = switch_on(e);
   commit(chg::kChangeLed);
 }
-void on_data_source(lv_event_t* e) {
-  edit().demo_mode = selected_segment(e) == 0;
-  commit(chg::kChangeDataSource);
+void reopen_async(void* section);
+
+void free_ble_address(lv_event_t* e) {
+  delete[] static_cast<char*>(lv_event_get_user_data(e));
+}
+
+void on_ble_device(lv_event_t* e) {
+  const char* address = static_cast<const char*>(lv_event_get_user_data(e));
+  if (address == nullptr || address[0] == 0) return;
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
+  const bool connected = platform::ble_connect(address);
+  if (g_ble_status_label != nullptr) {
+    set_text(g_ble_status_label, connected
+        ? "Đang kết nối BLE..."
+        : "Không thể bắt đầu kết nối BLE");
+  }
+  platform::play(connected ? platform::Sound::Confirm : platform::Sound::Error);
+}
+
+
+enum WifiField : intptr_t { kWifiSsid = 1, kWifiPassword, kWifiHost, kWifiPort };
+
+struct WifiNetworkSelection { char ssid[33]; bool secured; };
+void on_wifi_connect(lv_event_t* e);
+
+void wifi_keyboard_event(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_READY) return;
+  lv_obj_t* keyboard = lv_event_get_current_target_obj(e);
+  lv_obj_t* ta = lv_keyboard_get_textarea(keyboard);
+  const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  const char* value = ta == nullptr ? "" : lv_textarea_get_text(ta);
+  core::Settings& s = edit();
+  switch (field) {
+    case kWifiSsid: snprintf(s.wifi_ssid, sizeof(s.wifi_ssid), "%s", value); break;
+    case kWifiPassword: snprintf(s.wifi_password, sizeof(s.wifi_password), "%s", value); break;
+    case kWifiHost: snprintf(s.wifi_obd_host, sizeof(s.wifi_obd_host), "%s", value); break;
+    case kWifiPort: {
+      const unsigned long port = strtoul(value, nullptr, 10);
+      if (port > 0 && port <= 65535) s.wifi_obd_port = static_cast<uint16_t>(port);
+      break;
+    }
+  }
+  commit(chg::kChangeConnection);
+  g_wifi_keyboard = nullptr;
+  lv_obj_delete_async(keyboard);
+  if (field == kWifiPassword) on_wifi_connect(nullptr);
+}
+
+void wifi_input_focused(lv_event_t* e) {
+  lv_obj_t* ta = lv_event_get_target_obj(e);
+  const intptr_t field = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  if (g_wifi_keyboard != nullptr) lv_obj_delete(g_wifi_keyboard);
+  g_wifi_keyboard = lv_keyboard_create(lv_layer_top());
+  // Keep Barlow for all existing glyphs; only missing keyboard control symbols
+  // are resolved by the Montserrat fallback configured in font::keyboard().
+  lv_obj_set_style_text_font(g_wifi_keyboard, font::keyboard(), LV_PART_ITEMS);
+  lv_obj_set_width(g_wifi_keyboard, lv_pct(100));
+  lv_obj_align(g_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_keyboard_set_textarea(g_wifi_keyboard, ta);
+  lv_keyboard_set_mode(g_wifi_keyboard, field == kWifiPort ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
+  lv_obj_add_event_cb(g_wifi_keyboard, wifi_keyboard_event, LV_EVENT_READY, reinterpret_cast<void*>(field));
+  lv_obj_add_event_cb(g_wifi_keyboard, [](lv_event_t* ev) {
+    if (lv_event_get_code(ev) == LV_EVENT_CANCEL) {
+      lv_obj_t* kb = lv_event_get_current_target_obj(ev);
+      g_wifi_keyboard = nullptr;
+      lv_obj_delete_async(kb);
+    }
+  }, LV_EVENT_CANCEL, nullptr);
+}
+
+lv_obj_t* wifi_textarea(lv_obj_t* list, const char* caption, const char* value, intptr_t field,
+                        bool password = false) {
+  label(list, font::body(), color::text(), caption);
+  lv_obj_t* ta = lv_textarea_create(list);
+  lv_obj_set_width(ta, lv_pct(100));
+  lv_obj_set_height(ta, 38);
+  lv_textarea_set_one_line(ta, true);
+  lv_textarea_set_text(ta, value);
+  lv_textarea_set_password_mode(ta, password);
+  lv_obj_add_event_cb(ta, wifi_input_focused, LV_EVENT_FOCUSED, reinterpret_cast<void*>(field));
+  return ta;
+}
+
+void free_wifi_selection(lv_event_t* e) {
+  delete static_cast<WifiNetworkSelection*>(lv_event_get_user_data(e));
+}
+
+void on_wifi_network(lv_event_t* e) {
+  auto* selection = static_cast<WifiNetworkSelection*>(lv_event_get_user_data(e));
+  if (selection == nullptr || selection->ssid[0] == 0) return;
+  core::Settings& settings = edit();
+  snprintf(settings.wifi_ssid, sizeof(settings.wifi_ssid), "%s", selection->ssid);
+  settings.wifi_password[0] = 0;
+  commit(chg::kChangeConnection);
+  lv_obj_t* list = lv_obj_get_parent(lv_event_get_current_target_obj(e));
+  if (g_wifi_password_prompt != nullptr) {
+    lv_obj_delete(g_wifi_password_prompt);
+    g_wifi_password_prompt = nullptr;
+    g_wifi_password_input = nullptr;
+  }
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
+  if (selection->secured) {
+    // Compact three-row password dialog:
+    // 1) Wi-Fi title, 2) password + show/hide, 3) Cancel / Connect.
+    g_wifi_password_prompt = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(g_wifi_password_prompt, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(g_wifi_password_prompt, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_wifi_password_prompt, LV_OPA_50, 0);
+    lv_obj_set_style_border_width(g_wifi_password_prompt, 0, 0);
+    lv_obj_set_style_pad_all(g_wifi_password_prompt, 0, 0);
+
+    lv_obj_t* dialog = card(g_wifi_password_prompt);
+    lv_obj_set_width(dialog, lv_pct(94));
+    lv_obj_set_flex_flow(dialog, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(dialog, 8, 0);
+    lv_obj_set_style_pad_row(dialog, 6, 0);
+    lv_obj_align(dialog, LV_ALIGN_TOP_MID, 0, 6);
+
+    char caption[72];
+    snprintf(caption, sizeof(caption), "Kết nối WIFI: %s", selection->ssid);
+    label(dialog, font::title(), color::text(), caption);
+
+    lv_obj_t* password_row = row(dialog, 6);
+    lv_obj_set_width(password_row, lv_pct(100));
+    lv_obj_set_flex_align(password_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    label(password_row, font::body(), color::text(), "Mật khẩu:");
+    g_wifi_password_input = lv_textarea_create(password_row);
+    lv_obj_set_height(g_wifi_password_input, 38);
+    lv_obj_set_flex_grow(g_wifi_password_input, 1);
+    lv_textarea_set_one_line(g_wifi_password_input, true);
+    lv_textarea_set_password_mode(g_wifi_password_input, true);
+    lv_textarea_set_text(g_wifi_password_input, "");
+    lv_obj_add_event_cb(g_wifi_password_input, wifi_input_focused, LV_EVENT_FOCUSED,
+                        reinterpret_cast<void*>(kWifiPassword));
+
+    lv_obj_t* visibility_button = button(password_row, nullptr, "Hiện", ButtonStyle::Ghost,
+        [](lv_event_t* event) {
+          lv_obj_t* toggle = lv_event_get_current_target_obj(event);
+          const bool show = lv_textarea_get_password_mode(g_wifi_password_input);
+          lv_textarea_set_password_mode(g_wifi_password_input, !show);
+          lv_obj_t* text = lv_obj_get_child(toggle, 0);
+          if (text != nullptr) lv_label_set_text(text, show ? "Ẩn" : "Hiện");
+        }, nullptr);
+
+    lv_obj_t* actions = row(dialog, 8);
+    lv_obj_set_width(actions, lv_pct(100));
+    lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* cancel_button = button(actions, nullptr, "Hủy", ButtonStyle::Secondary,
+        [](lv_event_t*) {
+          if (g_wifi_keyboard != nullptr) {
+            lv_obj_delete(g_wifi_keyboard);
+            g_wifi_keyboard = nullptr;
+          }
+          if (g_wifi_password_prompt != nullptr) {
+            lv_obj_delete(g_wifi_password_prompt);
+            g_wifi_password_prompt = nullptr;
+            g_wifi_password_input = nullptr;
+          }
+        }, nullptr);
+    lv_obj_t* connect_button = button(actions, nullptr, "Kết nối", ButtonStyle::Primary,
+        [](lv_event_t*) {
+          if (g_wifi_password_input != nullptr) {
+            snprintf(edit().wifi_password, sizeof(edit().wifi_password), "%s",
+                     lv_textarea_get_text(g_wifi_password_input));
+            commit(chg::kChangeConnection);
+          }
+          on_wifi_connect(nullptr);
+        }, nullptr);
+    lv_obj_set_flex_grow(cancel_button, 1);
+    lv_obj_set_flex_grow(connect_button, 1);
+    lv_obj_send_event(g_wifi_password_input, LV_EVENT_FOCUSED, nullptr);
+  } else {
+    platform::play(platform::Sound::Confirm);
+    on_wifi_connect(nullptr);
+  }
+}
+
+void on_wifi_connect(lv_event_t*) {
+  const core::Settings& s = get();
+  if (s.wifi_ssid[0] == 0) {
+    return;
+  }
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
+  if (g_wifi_password_prompt != nullptr) {
+    lv_obj_delete(g_wifi_password_prompt);
+    g_wifi_password_prompt = nullptr;
+    g_wifi_password_input = nullptr;
+  }
+  platform::wifi_obd_disconnect();
+  if (!platform::wifi_connect(s.wifi_ssid, s.wifi_password)) {
+    return;
+  }
+  g_wifi_connect_pending = true;
+  g_wifi_connect_started = platform::millis();
+}
+
+void on_wifi_obd_connect(lv_event_t*) {
+  const core::Settings& s = get();
+  if (!platform::wifi_connected()) {
+    return;
+  }
+  if (s.wifi_obd_host[0] == 0 || s.wifi_obd_port == 0) {
+    return;
+  }
+  const bool ok = platform::wifi_obd_connect(s.wifi_obd_host, s.wifi_obd_port);
+  (void)ok;
+}
+
+void on_obd_source(lv_event_t* e) {
+  const uint8_t source = static_cast<uint8_t>(selected_segment(e));
+  edit().obd_source = source;
+  edit().demo_mode = source == 0;
+  edit().ble_enabled = source == 1;
+  edit().wifi_enabled = source == 2;
+  commit(chg::kChangeConnection | chg::kChangeDataSource);
 }
 void on_language(lv_event_t* e) {
   const auto lang = static_cast<core::Language>(selected_segment(e));
@@ -274,8 +509,8 @@ void SettingsPage::refresh_summaries() {
   }
   set_text(summaries_[static_cast<int>(Section::Sound)], buf);
 
-  set_text(summaries_[static_cast<int>(Section::Connection)],
-           core::tr(s.demo_mode ? core::Str::SET_SRC_DEMO : core::Str::SET_SRC_LINK));
+  const uint8_t source = s.obd_source < 4 ? s.obd_source : 0;
+  set_text(summaries_[static_cast<int>(Section::Connection)], kObdSources[source]);
   set_text(summaries_[static_cast<int>(Section::System)], core::i18n::language_name(s.language));
   set_text(summaries_[static_cast<int>(Section::About)], "v" APP_VERSION);
 }
@@ -296,6 +531,10 @@ void SettingsPage::on_settings_changed(uint32_t changes) {
     percent_text(night_value_, s.night_brightness);
   }
   if (section_ == Section::Sound && volume_value_ != nullptr) percent_text(volume_value_, get().volume);
+  if (section_ == Section::Connection && (changes & chg::kChangeConnection) &&
+      get().obd_source != g_built_obd_source) {
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
 
   // The redline / shift steppers are bounded by the tachometer range: rebuild the
   // section (deferred, the change originates from a widget inside it).
@@ -351,18 +590,32 @@ void SettingsPage::open(Section section) {
 }
 
 void SettingsPage::close_section() {
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
   if (detail_ != nullptr) {
     lv_obj_delete(detail_);
     detail_ = nullptr;
   }
   ambient_label_ = night_row_ = day_title_ = brightness_value_ = night_value_ = nullptr;
   volume_value_ = link_status_ = memory_label_ = uptime_label_ = nullptr;
+  g_ble_scan_status = nullptr;
+  g_ble_status_label = nullptr;
+  g_wifi_ip_label = nullptr;
+  g_wifi_password_prompt = nullptr;
+  g_wifi_password_input = nullptr;
+  if (g_wifi_keyboard != nullptr) {
+    lv_obj_delete(g_wifi_keyboard);
+    g_wifi_keyboard = nullptr;
+  }
+  g_wifi_scan_pending = false;
   for (auto& swatch : accent_swatches_) swatch = nullptr;
   section_ = Section::None;
 }
 
 bool SettingsPage::on_back() {
   if (detail_ == nullptr) return false;
+  platform::ble_scan_stop();
+  g_ble_scan_pending = false;
   close_section();
   set_visible(master_, true);
   refresh_summaries();
@@ -373,6 +626,35 @@ bool SettingsPage::on_back() {
 
 void SettingsPage::update(uint32_t now_ms) {
   if (detail_ == nullptr) return;
+  if (section_ == Section::Connection && get().obd_source == 2 && g_wifi_scan_pending &&
+      platform::wifi_scan_completed() && !platform::wifi_scan_active()) {
+    g_wifi_scan_pending = false;
+    g_wifi_rebuilding_after_scan = true;
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
+  if (section_ == Section::Connection && g_ble_scan_pending &&
+      platform::ble_scan_completed() && !platform::ble_scan_active()) {
+    g_ble_scan_pending = false;
+    g_ble_rebuilding_after_scan = true;
+    lv_async_call(reopen_async, reinterpret_cast<void*>(static_cast<intptr_t>(Section::Connection)));
+  }
+  if (section_ == Section::Connection && get().obd_source == 2) {
+    if (g_wifi_ip_label != nullptr) set_text(g_wifi_ip_label, platform::wifi_ip_address());
+    if (g_wifi_connect_pending && platform::wifi_connected()) g_wifi_connect_pending = false;
+    if (g_wifi_connect_pending && platform::millis() - g_wifi_connect_started > 15000)
+      g_wifi_connect_pending = false;
+    if (link_status_ != nullptr) {
+      const char* status = platform::wifi_obd_connected() ? "Đã kết nối TCP ELM327 · chưa xác nhận OBD-II" :
+          (platform::wifi_connected() ? "Wi-Fi đã kết nối · ELM327 chưa kết nối" :
+           (g_wifi_connect_pending ? "Đang kết nối Wi-Fi..." : "Chưa kết nối Wi-Fi"));
+      set_text(link_status_, status);
+    }
+  }
+  if (section_ == Section::Connection && g_ble_status_label != nullptr && get().obd_source == 1) {
+    set_text(g_ble_status_label, platform::ble_connected()
+        ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II"
+        : (platform::ble_scan_active() ? "Đang quét thiết bị BLE..." : "Chưa kết nối thiết bị BLE"));
+  }
   if (last_live_ms_ != 0 && now_ms - last_live_ms_ < kLiveUpdateMs) return;
   last_live_ms_ = now_ms;
   update_live_values(now_ms);
@@ -385,9 +667,16 @@ void SettingsPage::update_live_values(uint32_t now_ms) {
     set_text(ambient_label_, buf);
   }
   if (link_status_ != nullptr) {
-    const core::LinkState state = core::vehicle().link_state;
-    set_text(link_status_, link_state_text(state));
-    set_text_color(link_status_, state == core::LinkState::Connected ? color::ok() : color::text_dim());
+    if (section_ == Section::Connection && get().obd_source == 1) {
+      const bool connected = platform::ble_connected();
+      set_text(link_status_, connected ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" :
+          (platform::ble_scan_active() ? "Đang quét thiết bị BLE..." : "Chưa kết nối thiết bị BLE"));
+      set_text_color(link_status_, connected ? color::ok() : color::text_dim());
+    } else {
+      const core::LinkState state = core::vehicle().link_state;
+      set_text(link_status_, link_state_text(state));
+      set_text_color(link_status_, state == core::LinkState::Connected ? color::ok() : color::text_dim());
+    }
   }
   if (memory_label_ != nullptr) {
     platform::SystemInfo info;
@@ -512,13 +801,98 @@ void SettingsPage::build_sound(lv_obj_t* list) {
 }
 
 void SettingsPage::build_connection(lv_obj_t* list) {
-  g_sources[0] = core::tr(core::Str::SET_SRC_DEMO);
-  g_sources[1] = core::tr(core::Str::SET_SRC_LINK);
-  g_sources[2] = nullptr;
-  rows::segmented(list, ICON_DATABASE, core::tr(core::Str::SET_DATA_SOURCE), g_sources, get().demo_mode ? 0 : 1,
-                  on_data_source, nullptr);
-  link_status_ = rows::info(list, ICON_LINK, core::tr(core::Str::SET_LINK_STATUS), "");
-  rows::note(list, core::tr(core::Str::SET_DEMO_HINT));
+  const core::Settings& s = get();
+  const uint8_t source = s.obd_source < 4 ? s.obd_source : 0;
+  g_built_obd_source = source;
+
+  rows::section(list, "OBD-II");
+  rows::segmented(list, ICON_DATABASE, "Nguồn dữ liệu", kObdSources, source, on_obd_source, nullptr);
+
+  switch (source) {
+    case 0:
+      rows::note(list, "Demo đang sử dụng dữ liệu mô phỏng hiện tại.");
+      break;
+    case 1: {
+      rows::section(list, "Bluetooth");
+      if (!g_ble_rebuilding_after_scan && !platform::ble_scan_active()) {
+        if (platform::ble_scan_start()) g_ble_scan_pending = true;
+      }
+      g_ble_rebuilding_after_scan = false;
+      const uint8_t count = platform::ble_scan_count();
+      if (count == 0) {
+        g_ble_scan_status = rows::note(
+            list, platform::ble_scan_active() ? "Đang quét thiết bị BLE..." :
+                  (platform::ble_scan_completed() ? "Không tìm thấy thiết bị BLE." :
+                   "Đang chuẩn bị quét thiết bị BLE..."));
+      } else {
+        g_ble_scan_status = rows::note(list, "Chạm vào thiết bị để kết nối BLE:");
+        for (uint8_t i = 0; i < count; ++i) {
+          platform::BleDeviceInfo device{};
+          if (!platform::ble_scan_get(i, device)) continue;
+          char rssi[20];
+          snprintf(rssi, sizeof(rssi), "%d dBm", static_cast<int>(device.rssi));
+          char* address = new char[sizeof(device.address)];
+          snprintf(address, sizeof(device.address), "%s", device.address);
+          lv_obj_t* value = rows::nav(list, ICON_LINK, device.name, rssi, on_ble_device, address);
+          lv_obj_add_event_cb(lv_obj_get_parent(value), free_ble_address, LV_EVENT_DELETE, address);
+        }
+      }
+      break;
+    }
+    case 2: {
+      rows::section(list, "Chọn mạng Wi-Fi");
+      if (!g_wifi_rebuilding_after_scan) {
+        platform::wifi_scan_start();
+        g_wifi_scan_pending = platform::wifi_scan_active();
+      } else {
+        g_wifi_rebuilding_after_scan = false;
+      }
+      const uint8_t wifi_count = platform::wifi_scan_count();
+      if (wifi_count == 0) {
+        rows::note(list, platform::wifi_scan_active() ? "Đang tự động quét mạng Wi-Fi..." :
+            (platform::wifi_scan_completed() ? "Không tìm thấy mạng Wi-Fi." :
+             "Đang khởi tạo quét Wi-Fi..."));
+      } else {
+        rows::note(list, "Chạm vào mạng Wi-Fi để chọn:");
+        for (uint8_t i = 0; i < wifi_count; ++i) {
+          platform::WifiNetworkInfo network{};
+          if (!platform::wifi_scan_get(i, network) || network.ssid[0] == 0) continue;
+          char detail[24];
+          snprintf(detail, sizeof(detail), "%d dBm", static_cast<int>(network.rssi));
+          auto* selection = new WifiNetworkSelection{};
+          snprintf(selection->ssid, sizeof(selection->ssid), "%s", network.ssid);
+          selection->secured = network.secured;
+          lv_obj_t* item = rows::nav(list, ICON_LINK, network.ssid, detail, on_wifi_network, selection,
+                                     network.secured ? ICON_LOCK : nullptr);
+          lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_selection, LV_EVENT_DELETE, selection);
+        }
+      }
+      g_wifi_ip_label = rows::info(list, ICON_DATABASE, "IP của ESP32", platform::wifi_ip_address());
+
+      rows::section(list, "Thiết bị ELM327 Wi-Fi");
+      char port[8];
+      snprintf(port, sizeof(port), "%u", static_cast<unsigned>(s.wifi_obd_port ? s.wifi_obd_port : 35000));
+      wifi_textarea(list, "IP của ELM327", s.wifi_obd_host, kWifiHost);
+      wifi_textarea(list, "Cổng TCP của ELM327", port, kWifiPort);
+      rows::note(list, "Mặc định tham khảo: 192.168.0.10 và TCP 35000. Kiểm tra thông số thực tế trên adapter.");
+      rows::action(list, ICON_LINK, "Kết nối ELM327 TCP", color::accent(), on_wifi_obd_connect, nullptr);
+      break;
+    }
+    case 3:
+      rows::section(list, "USB");
+      rows::note(list, "USB chưa được triển khai; chưa thể nhận dữ liệu OBD-II.");
+      break;
+  }
+
+  rows::section(list, "Trạng thái OBD-II");
+  const char* connection_status =
+      source == 1 ? (platform::ble_connected() ? "Đã kết nối BLE GATT · chưa xác nhận OBD-II" :
+                     (s.ble_address[0] ? "Chưa kết nối BLE" : "Chưa chọn thiết bị")) :
+      (source == 2 ? (platform::wifi_obd_connected() ? "Đã kết nối TCP ELM327 · chưa xác nhận OBD-II" :
+                      (platform::wifi_connected() ? "Wi-Fi đã kết nối · ELM327 chưa kết nối" : "Chưa kết nối Wi-Fi")) :
+       "Chưa nhận dữ liệu OBD-II");
+  link_status_ = rows::info(list, ICON_LINK, "Trạng thái", connection_status);
+  if (source == 1) g_ble_status_label = link_status_;
 }
 
 void SettingsPage::build_system(lv_obj_t* list) {

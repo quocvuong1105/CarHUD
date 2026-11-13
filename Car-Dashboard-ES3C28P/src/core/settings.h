@@ -60,9 +60,18 @@ struct Settings {
   uint8_t dash_view;
   SignalId corner_slots[kCornerSlots];
   SignalId gauge_slots[kGaugeSlots];
+  // Connection settings (append-only persisted fields)
+  uint8_t obd_source;          ///< 0=Demo, 1=Bluetooth BLE, 2=Wi-Fi, 3=USB
+  bool wifi_enabled;
+  bool ble_enabled;
+  char wifi_ssid[33];
+  char wifi_password[65];
+  char wifi_obd_host[16];      ///< IPv4 address of Wi-Fi OBD adapter; empty until configured
+  uint16_t wifi_obd_port;      ///< TCP port of Wi-Fi OBD adapter; user-configurable
+  char ble_address[18];        ///< Selected BLE address as text; empty until selected
 };
 
-constexpr uint16_t kSettingsVersion = 1;
+constexpr uint16_t kSettingsVersion = 2;
 
 namespace settings {
 
@@ -79,6 +88,7 @@ enum Change : uint32_t {
   kChangeLed = 1u << 8,
   kChangeDataSource = 1u << 9,
   kChangeLayout = 1u << 10,  ///< dashboard view / slots
+  kChangeConnection = 1u << 11,  ///< Wi-Fi / Bluetooth connection settings
   kChangeAll = 0xFFFFFFFFu,
 };
 

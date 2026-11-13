@@ -5,6 +5,12 @@
  * application data first.
  */
 #include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEScan.h>
+#include <BLEClient.h>
+#include <string.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 
 #include "../config/board_config.h"
 #include "../core/platform.h"
@@ -16,8 +22,231 @@
 #include "touch.h"
 
 namespace platform {
+namespace {
+
+constexpr uint8_t kBleMaxDevices = 16;
+BleDeviceInfo g_ble_devices[kBleMaxDevices] = {};
+uint8_t g_ble_device_count = 0;
+volatile bool g_ble_scan_active = false;
+volatile bool g_ble_scan_completed = false;
+bool g_ble_initialized = false;
+BLEClient* g_ble_client = nullptr;
+bool g_ble_connected = false;
+portMUX_TYPE g_ble_mux = portMUX_INITIALIZER_UNLOCKED;
+WiFiClient g_wifi_obd_client;
+String g_wifi_ip;
+
+void ble_scan_complete(BLEScanResults results) {
+  BleDeviceInfo found[kBleMaxDevices] = {};
+  const uint32_t total = results.getCount();
+  const uint8_t count = static_cast<uint8_t>(total < kBleMaxDevices ? total : kBleMaxDevices);
+
+  for (uint8_t i = 0; i < count; ++i) {
+    BLEAdvertisedDevice device = results.getDevice(i);
+    const String address = device.getAddress().toString();
+    const String name = device.haveName() ? device.getName() : String();
+    snprintf(found[i].address, sizeof(found[i].address), "%s", address.c_str());
+    // Use the MAC address as the visible name for unnamed peripherals so
+    // users can distinguish multiple adapters without advertised names.
+    snprintf(found[i].name, sizeof(found[i].name), "%s",
+             name.length() == 0 ? address.c_str() : name.c_str());
+    found[i].rssi = static_cast<int16_t>(device.getRSSI());
+  }
+
+  // Sort by RSSI descending: values closer to 0 dBm are stronger.
+  // Insertion sort keeps the original order for devices with equal RSSI.
+  for (uint8_t i = 1; i < count; ++i) {
+    const BleDeviceInfo current = found[i];
+    int8_t j = static_cast<int8_t>(i) - 1;
+    while (j >= 0 && found[j].rssi < current.rssi) {
+      found[j + 1] = found[j];
+      --j;
+    }
+    found[j + 1] = current;
+  }
+
+  portENTER_CRITICAL(&g_ble_mux);
+  memcpy(g_ble_devices, found, sizeof(found));
+  g_ble_device_count = count;
+  g_ble_scan_active = false;
+  g_ble_scan_completed = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+}
+
+}  // namespace
 
 uint32_t millis() { return ::millis(); }
+
+bool ble_scan_start() {
+  if (g_ble_scan_active) return false;
+  if (!g_ble_initialized) {
+    BLEDevice::init("");
+    g_ble_initialized = true;
+  }
+
+  BLEScan* scanner = BLEDevice::getScan();
+  if (scanner == nullptr) return false;
+  scanner->setActiveScan(true);
+  scanner->setInterval(100);
+  scanner->setWindow(99);
+  scanner->clearResults();
+
+  portENTER_CRITICAL(&g_ble_mux);
+  g_ble_device_count = 0;
+  g_ble_scan_completed = false;
+  g_ble_scan_active = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+
+  if (!scanner->start(6, ble_scan_complete, false)) {
+    portENTER_CRITICAL(&g_ble_mux);
+    g_ble_scan_active = false;
+    g_ble_scan_completed = true;
+    portEXIT_CRITICAL(&g_ble_mux);
+    return false;
+  }
+  return true;
+}
+
+bool ble_connect(const char* address) {
+  if (address == nullptr || address[0] == 0) return false;
+  if (!g_ble_initialized) {
+    BLEDevice::init("");
+    g_ble_initialized = true;
+  }
+
+  g_ble_connected = false;
+  // Arduino-ESP32 BLE 3.2.1 has no client-deletion API.
+  // Reuse the client object; disconnect it before attempting another device.
+  if (g_ble_client != nullptr && g_ble_client->isConnected()) {
+    g_ble_client->disconnect();
+  }
+  if (g_ble_client == nullptr) {
+    g_ble_client = BLEDevice::createClient();
+  }
+  if (g_ble_client == nullptr) return false;
+  if (!g_ble_client->connect(BLEAddress(address))) return false;
+
+  // A successful GATT connection is distinct from a successful OBD-II
+  // command exchange; the latter is verified by the data-link layer.
+  g_ble_connected = g_ble_client->isConnected();
+  return g_ble_connected;
+}
+
+void ble_disconnect() {
+  g_ble_connected = false;
+  if (g_ble_client != nullptr && g_ble_client->isConnected()) {
+    g_ble_client->disconnect();
+  }
+}
+
+bool ble_connected() {
+  g_ble_connected = g_ble_client != nullptr && g_ble_client->isConnected();
+  return g_ble_connected;
+}
+
+void ble_scan_stop() {
+  if (!g_ble_initialized || !g_ble_scan_active) return;
+  BLEScan* scanner = BLEDevice::getScan();
+  if (scanner != nullptr) scanner->stop();
+  portENTER_CRITICAL(&g_ble_mux);
+  g_ble_scan_active = false;
+  g_ble_scan_completed = true;
+  portEXIT_CRITICAL(&g_ble_mux);
+}
+
+bool ble_scan_active() { return g_ble_scan_active; }
+
+bool ble_scan_completed() { return g_ble_scan_completed; }
+
+uint8_t ble_scan_count() {
+  portENTER_CRITICAL(&g_ble_mux);
+  const uint8_t count = g_ble_device_count;
+  portEXIT_CRITICAL(&g_ble_mux);
+  return count;
+}
+
+bool ble_scan_get(uint8_t index, BleDeviceInfo& out) {
+  portENTER_CRITICAL(&g_ble_mux);
+  const bool valid = index < g_ble_device_count;
+  if (valid) memcpy(&out, &g_ble_devices[index], sizeof(out));
+  portEXIT_CRITICAL(&g_ble_mux);
+  return valid;
+}
+
+bool wifi_scan_start() {
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
+  WiFi.mode(WIFI_STA);
+  WiFi.scanDelete();
+  const int result = WiFi.scanNetworks(true, true);
+  return result == WIFI_SCAN_RUNNING || result >= 0;
+}
+
+bool wifi_scan_active() {
+  return WiFi.scanComplete() == WIFI_SCAN_RUNNING;
+}
+
+bool wifi_scan_completed() {
+  return WiFi.scanComplete() != WIFI_SCAN_RUNNING;
+}
+
+uint8_t wifi_scan_count() {
+  const int count = WiFi.scanComplete();
+  if (count <= 0) return 0;
+  return static_cast<uint8_t>(count > 255 ? 255 : count);
+}
+
+bool wifi_scan_get(uint8_t index, WifiNetworkInfo& out) {
+  const int count = WiFi.scanComplete();
+  if (count < 0 || index >= count) return false;
+  const String ssid = WiFi.SSID(index);
+  snprintf(out.ssid, sizeof(out.ssid), "%s", ssid.c_str());
+  out.rssi = static_cast<int16_t>(WiFi.RSSI(index));
+  out.secured = WiFi.encryptionType(index) != WIFI_AUTH_OPEN;
+  return true;
+}
+
+bool wifi_connect(const char* ssid, const char* password) {
+  if (ssid == nullptr || ssid[0] == 0) return false;
+  wifi_obd_disconnect();
+  if (WiFi.status() == WL_CONNECTED && WiFi.SSID() == ssid) return true;
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password == nullptr ? "" : password);
+  return true;  // Connection is asynchronous; poll wifi_connected().
+}
+
+void wifi_disconnect() {
+  wifi_obd_disconnect();
+  WiFi.disconnect(true, false);
+}
+
+bool wifi_connected() { return WiFi.status() == WL_CONNECTED; }
+
+const char* wifi_ip_address() {
+  g_wifi_ip = wifi_connected() ? WiFi.localIP().toString() : String("--");
+  return g_wifi_ip.c_str();
+}
+
+bool wifi_obd_connect(const char* host, uint16_t port) {
+  if (!wifi_connected() || host == nullptr || host[0] == 0 || port == 0) return false;
+  wifi_obd_disconnect();
+  return g_wifi_obd_client.connect(host, port, 3000);
+}
+
+void wifi_obd_disconnect() {
+  if (g_wifi_obd_client.connected()) g_wifi_obd_client.stop();
+}
+
+bool wifi_obd_connected() { return g_wifi_obd_client.connected(); }
+
+size_t wifi_obd_write(const uint8_t* data, size_t length) {
+  if (!wifi_obd_connected() || data == nullptr || length == 0) return 0;
+  return g_wifi_obd_client.write(data, length);
+}
+
+int wifi_obd_available() { return wifi_obd_connected() ? g_wifi_obd_client.available() : 0; }
+
+int wifi_obd_read() { return wifi_obd_connected() ? g_wifi_obd_client.read() : -1; }
 
 void system_info(SystemInfo& out) {
   out.chip_model = ESP.getChipModel();

@@ -2,7 +2,7 @@ name: Build CarHUD for ESP32-S3 (ES3C28P / ES3N28P)
 
 on:
   push:
-    branches: [main, feature/modular-i18n-crowdin, feature/rename-carhud-project]
+    branches: [main, feature/modular-i18n-crowdin, feature/rename-carhud-project, feature/connection-wifi-ble]
   pull_request:
     branches: [main]
   workflow_dispatch:

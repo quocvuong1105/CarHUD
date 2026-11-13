@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "touch_calibration.h"
@@ -15,6 +16,50 @@
 namespace platform {
 
 uint32_t millis();
+
+// ---- Bluetooth Low Energy discovery --------------------------------------------
+
+struct BleDeviceInfo {
+  char name[32];
+  char address[18];
+  int16_t rssi;
+};
+
+/** Starts a non-blocking BLE scan. Results become available when it completes. */
+bool ble_connect(const char* address);
+void ble_disconnect();
+bool ble_connected();
+bool ble_scan_start();
+void ble_scan_stop();
+bool ble_scan_active();
+bool ble_scan_completed();
+uint8_t ble_scan_count();
+bool ble_scan_get(uint8_t index, BleDeviceInfo& out);
+
+// ---- Wi-Fi discovery and ELM327 TCP transport ----------------------------------
+
+struct WifiNetworkInfo {
+  char ssid[33];
+  int16_t rssi;
+  bool secured;
+};
+
+bool wifi_scan_start();
+bool wifi_scan_active();
+bool wifi_scan_completed();
+uint8_t wifi_scan_count();
+bool wifi_scan_get(uint8_t index, WifiNetworkInfo& out);
+bool wifi_connect(const char* ssid, const char* password);
+void wifi_disconnect();
+bool wifi_connected();
+const char* wifi_ip_address();
+
+bool wifi_obd_connect(const char* host, uint16_t port);
+void wifi_obd_disconnect();
+bool wifi_obd_connected();
+size_t wifi_obd_write(const uint8_t* data, size_t length);
+int wifi_obd_available();
+int wifi_obd_read();
 
 // ---- System information ---------------------------------------------------------
 
