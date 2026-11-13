@@ -756,11 +756,12 @@ void SettingsPage::build_connection(lv_obj_t* list) {
     case 2: {
       rows::section(list, "Chọn mạng Wi-Fi");
       if (!g_wifi_rebuilding_after_scan) {
-        g_wifi_scan_pending = platform::wifi_scan_start();
+        platform::wifi_scan_start();
+        g_wifi_scan_pending = platform::wifi_scan_active();
       } else {
         g_wifi_rebuilding_after_scan = false;
       }
-      g_wifi_ssid_label = rows::info(list, ICON_WIFI, "Mạng đã chọn",
+      g_wifi_ssid_label = rows::info(list, ICON_LINK, "Mạng đã chọn",
           s.wifi_ssid[0] ? s.wifi_ssid : "Chưa chọn mạng Wi-Fi");
       const uint8_t wifi_count = platform::wifi_scan_count();
       if (wifi_count == 0) {
