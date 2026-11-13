@@ -778,7 +778,7 @@ void SettingsPage::build_connection(lv_obj_t* list) {
                    network.secured ? "Có mật khẩu" : "Không mật khẩu");
           char* ssid = new char[sizeof(network.ssid)];
           snprintf(ssid, sizeof(network.ssid), "%s", network.ssid);
-          lv_obj_t* item = rows::nav(list, ICON_WIFI, network.ssid, detail, on_wifi_network, ssid);
+          lv_obj_t* item = rows::nav(list, ICON_LINK, network.ssid, detail, on_wifi_network, ssid);
           lv_obj_add_event_cb(lv_obj_get_parent(item), free_wifi_ssid, LV_EVENT_DELETE, ssid);
         }
       }
